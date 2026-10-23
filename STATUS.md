@@ -18,7 +18,37 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: H (mobile WebGL hardening, arena shrink, live traffic) — verified
+## Current milestone: I (mobile GPU profile + context-loss self-infliction fix) — verified
+
+### Changed — light graphics profile on phones (auto-detected via `pointer: coarse`, or `?low=1`)
+- MSAA off, pixel ratio capped at 1.5 (was 2), shadow map 1024 (was 2048) — cuts GPU
+  framebuffer memory ~5–8×, which is what stops Chrome reclaiming the context with many
+  tabs open. Desktop profile unchanged (verified MSAA still on).
+- Auto-degrade: if a phone still can't hold ~30 fps after 6 s of play, one-shot drop to
+  pixel ratio 1 + shadows off (`degradeQuality`).
+- Boot guard: no longer pops the menu over a running game on unrelated runtime errors;
+  slow cold starts get 30 s instead of 20.
+
+### Fixed — "Your browser reclaimed the 3D graphics" on every app switch
+- Root cause was self-inflicted: the `pagehide(persisted)` handler called
+  `renderer.forceContextLoss()` to free the GPU for bfcache — and the forced loss fired
+  our own `webglcontextlost` handler, showing the "reclaimed" overlay. Android fires
+  `pagehide(persisted)` on app switch / screen off, so the game declared itself crashed
+  every time the user left the tab.
+- Removed the forced loss. `pageshow(persisted)` now resumes seamlessly and only reloads
+  if the context actually died (`isContextLost()`).
+- Real context loss now also **pauses the game** (no dying behind the overlay) and the
+  render loop polls `isContextLost()` as a safety net for losses that never fire the event.
+- Persistent frame-loop exceptions show a "Something broke: <error> — TAP TO RELOAD"
+  overlay instead of a white canvas with a live HUD.
+
+### Verification
+- 32/32 tests, tsc clean. Browser: `pagehide(persisted)` → context alive, no overlay,
+  game keeps playing; `pageshow(persisted)` with live context → no reload; forced real
+  loss → overlay + phase `paused`. Mobile profile confirmed (`antialias: false`), desktop
+  unaffected (`antialias: true`).
+
+## Previous milestone: H (mobile WebGL hardening, arena shrink, live traffic) — verified
 
 ### Fixed — mobile Chrome: reload error + white first play (Pixel 10 report)
 - **Reload → "Error creating WebGL context"**: Android Chrome releases the previous page's GPU

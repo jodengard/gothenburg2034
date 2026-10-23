@@ -100,26 +100,28 @@ function showOverlay(title: string, msg: string, btn: string, action: () => void
 }
 
 // If Chrome reclaims our context mid-session the canvas goes white; detect it,
-// stop rendering and offer a one-tap reload instead of a silent white screen.
+// pause the game and offer a one-tap reload instead of a silent white screen.
 let contextLost = false;
-renderer.domElement.addEventListener('webglcontextlost', (e) => {
-  e.preventDefault();
+function onContextLost(e?: Event): void {
+  if (e) e.preventDefault(); // lets Chrome try to restore (we reload if it does)
+  if (contextLost) return;
   contextLost = true;
+  pauseGame(); // don't let the player die behind the overlay
   showOverlay('Graphics were interrupted',
     'Your browser reclaimed the 3D graphics — usually caused by having many tabs open. Close a few tabs, then tap the button.',
     'TAP TO RELOAD', () => location.reload());
-});
+}
+renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
 
-// Free the GPU promptly when the page enters the back/forward cache (so a
-// reload or another tab can create its context); pageshow then starts clean.
-window.addEventListener('pagehide', (e) => {
-  if ((e as PageTransitionEvent).persisted) {
-    try { renderer.forceContextLoss(); } catch { /* ignore */ }
-  }
-});
+// Returning from the back/forward cache (app switch on Android): the context
+// usually survives, so resume seamlessly — only reload when it actually died.
+// (Never force-lose the context on pagehide: that made every app switch look
+// like a crash, since the forced loss triggered the "reclaimed" overlay.)
 window.addEventListener('pageshow', (e) => {
-  if ((e as PageTransitionEvent).persisted) location.reload();
+  if ((e as PageTransitionEvent).persisted && renderer.getContext().isContextLost()) {
+    location.reload();
+  }
 });
 
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
@@ -654,6 +656,8 @@ function frame(now: number): void {
 
     fx.update(dt);
     hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
+    // safety net: some context losses never fire the event — catch them here
+    if (!contextLost && renderer.getContext().isContextLost()) onContextLost();
     if (!contextLost) renderer.render(scene, camera);
     errStreak = 0;
   } catch (e) {
