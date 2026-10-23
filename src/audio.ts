@@ -86,6 +86,18 @@ export const sfx = {
   hitConfirm(): void {
     playTone(880, 0.05, 0.12, 'square');
   },
+  headshot(): void {
+    // bright metallic "tink" + crack
+    playTone(1950, 0.07, 0.16, 'triangle');
+    playTone(2600, 0.05, 0.1, 'sine');
+    playNoise(0.08, 3200, 1.6, 0.25);
+  },
+  gore(): void {
+    // wet detonation: low thump + mid splatter + high spray
+    playTone(58, 0.4, 0.6, 'sine', -28);
+    playNoise(0.35, 260, 0.7, 0.7);
+    playNoise(0.18, 1400, 1.1, 0.3);
+  },
   zombieHurt(): void {
     playTone(160 + Math.random() * 60, 0.25, 0.2, 'sawtooth', -80);
     playNoise(0.2, 400, 1.0, 0.2);

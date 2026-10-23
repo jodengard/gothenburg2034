@@ -18,7 +18,45 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: M (zombie scooter riders — hijack, roadkill, battery, despawn) — verified
+## Current milestone: N (fatalities, headshots, rider eye alignment) — verified
+
+### Added — headshots (`zombie.ts` raycast + `main.ts` hitscan)
+- `ZombieManager.raycast` now returns a `head` flag: the ray must pass within
+  `FATALITY.headRadius` (0.24 m) of the head's vertical axis **and** cross it inside the
+  head's local height band (1.48–1.95 m above the mesh origin — so a rider standing on a
+  scooter deck at +0.18 m has the hitbox lifted with them).
+- Head hits deal **2.5× damage** (`FATALITY.headMult`), play a bright metallic *tink*
+  (`sfx.headshot`), spray blood at skull height and flash a **golden "✕ HEADSHOT"
+  hitmarker** (plain red ✕ for body hits). Works per shotgun pellet.
+
+### Added — fatalities: zombies sometimes explode (`zombie.ts` + `fx.ts` gore chunks)
+- `damage()` takes an attribution `opts { headshot, byPlayer }`; `kill()` rolls the
+  fatality: **headshot kills always detonate**, other player kills 15 % of the time
+  (`FATALITY.chance`). Traffic/ambient deaths never do (no attribution → no roll).
+- A fatality hides the corpse (`mesh.visible = false`, pool-safe — `spawn()` restores it)
+  and bursts it: 26-particle blood cloud + **10 flying gore chunks** (blood/flesh/bone
+  colored) from a pooled 90-slot `InstancedMesh` in `Fx` — one draw call, gravity, ground
+  bounce, spin, shrink-out after ~1.5–2 s. Plus a red flash, `sfx.gore` wet detonation and
+  camera shake.
+- Player attribution wired at every player damage site: hitscan, melee, chainsaw,
+  explosion splash and scooter roadkill.
+
+### Fixed — glowing eyes floated off scooter riders
+- `halloween.ts` placed every zombie's eye instances at a fixed y = 1.6, but a rider's
+  mesh is lifted 0.18 m onto the deck — the eyes sat in the rider's chest. Eye height is
+  now `1.6 + z.mesh.position.y`, so riders' eyes ride along (verified: instances at both
+  1.6 and 1.78 with 12 riders out).
+
+### Verification
+- tsc clean, 32/32 tests, build clean. Browser sim (20 assertions): head/torso/legs/chin
+  raycast bands incl. lifted rider band; real `fireWeapon` path — headshot 67.5 = 27×2.5,
+  body 27, gold HEADSHOT marker in DOM then back to plain red; headshot kill → `exploded`,
+  corpse hidden, kill credited, 10 gore chunks alive in the instanced pool; 3/40 body kills
+  detonated (≈15 %), 0/20 unattributed kills; rider headshot kill releases its scooter.
+- Screenshots: fatality mid-burst (chunks + blood spray, corpse gone); rider head-on with
+  glowing eyes correctly on the head.
+
+## Previous milestone: M (zombie scooter riders — hijack, roadkill, battery, despawn) — verified
 
 ### Added — hooligans on scooters (`zombie.ts` + `traffic.ts`)
 - Every street scooter now carries a **zombie rider**: a real pooled zombie linked to its

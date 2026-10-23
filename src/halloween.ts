@@ -190,8 +190,10 @@ export function buildHalloween(scene: THREE.Scene, world: World, bonfirePos: { x
         const fx = Math.sin(z.facing), fz = Math.cos(z.facing);
         const rx = Math.cos(z.facing), rz = -Math.sin(z.facing);
         const hx = z.pos.x + fx * 0.16, hz = z.pos.z + fz * 0.16;
+        // mesh.position.y lifts riders onto their deck — the eyes must ride along.
+        const eyeY = 1.6 + z.mesh.position.y;
         for (const side of [1, -1]) {
-          m.makeTranslation(hx + rx * 0.11 * side, 1.6, hz + rz * 0.11 * side);
+          m.makeTranslation(hx + rx * 0.11 * side, eyeY, hz + rz * 0.11 * side);
           eyes.setMatrixAt(n++, m);
         }
       }

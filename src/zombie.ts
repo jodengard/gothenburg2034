@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
-import { ZOMBIE, PERF, THROWABLE, PACK } from './config';
+import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY } from './config';
 import { ThrowableObject } from './world';
 
 export type ZombieState =
@@ -57,6 +57,11 @@ export interface Zombie {
   carrying: ThrowableObject | null;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
   ride: RideAnchor | null;
+  /** Damage attribution for the killing blow (fatalities only on player kills). */
+  lastHitHead: boolean;
+  lastHitByPlayer: boolean;
+  /** Set by kill() when this death plays as an exploding fatality. */
+  exploded: boolean;
   animT: number;
   fallDir: number;
   deadT: number;
@@ -180,7 +185,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, ride: null, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, ride: null, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -206,6 +211,9 @@ export class ZombieManager {
     zom.targetObj = null;
     zom.carrying = null;
     zom.ride = null;
+    zom.lastHitHead = false;
+    zom.lastHitByPlayer = false;
+    zom.exploded = false;
     zom.deadT = 0;
     zom.hitFlash = 0;
     zom.mesh.visible = true;
@@ -221,8 +229,14 @@ export class ZombieManager {
     return zom;
   }
 
-  /** Apply damage; returns true if killed. */
-  damage(z: Zombie, amount: number, knockX = 0, knockZ = 0): boolean {
+  /** Apply damage; returns true if killed. `opts` attributes the hit (headshot/fatality). */
+  damage(
+    z: Zombie,
+    amount: number,
+    knockX = 0,
+    knockZ = 0,
+    opts?: { headshot?: boolean; byPlayer?: boolean },
+  ): boolean {
     if (z.state === 'dead') return false;
     z.hp -= amount;
     z.hitFlash = 0.12;
@@ -230,6 +244,10 @@ export class ZombieManager {
     z.bodyMesh.material = FLASH;
     z.vel.x += knockX;
     z.vel.z += knockZ;
+    if (opts) {
+      if (opts.headshot) z.lastHitHead = true;
+      if (opts.byPlayer) z.lastHitByPlayer = true;
+    }
     if (z.hp <= 0) {
       this.kill(z);
       return true;
@@ -246,6 +264,8 @@ export class ZombieManager {
     z.state = 'dead';
     z.deadT = 0;
     z.fallDir = Math.random() < 0.5 ? 1 : -1;
+    // Fatality: a player kill detonates the corpse — headshots always, others sometimes.
+    z.exploded = z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance);
     if (z.ride) {
       z.ride = null; // tumble off the vehicle; traffic notices and drops it
       z.mesh.position.y = 0;
@@ -257,8 +277,8 @@ export class ZombieManager {
     this.events.onKill(z);
   }
 
-  /** Hitscan against zombies. Returns nearest hit zombie and distance. */
-  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): { z: Zombie; dist: number } | null {
+  /** Hitscan against zombies. Returns nearest hit zombie, distance, and headshot flag. */
+  raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): { z: Zombie; dist: number; head: boolean } | null {
     const o: Vec2 = { x: origin.x, z: origin.z };
     const d2 = { x: dir.x, z: dir.z };
     const len = Math.hypot(d2.x, d2.z) || 1;
@@ -274,7 +294,17 @@ export class ZombieManager {
       if (y < 0 || y > ZOMBIE.height + 0.15) continue;
       if (!best || t < best.dist) best = { z, dist: t };
     }
-    return best;
+    if (!best) return null;
+    // Headshot: the ray passes within headRadius of the head's vertical axis and
+    // crosses it inside the head's local height band (riders stand lifted on decks).
+    const z = best.z;
+    const ox = z.pos.x - o.x, oz = z.pos.z - o.z;
+    const tClose = Math.max(0, ox * d2.x + oz * d2.z);
+    const perp = Math.abs(ox * d2.z - oz * d2.x);
+    const localY = origin.y + slope * tClose - z.mesh.position.y;
+    const head = perp <= FATALITY.headRadius
+      && localY >= FATALITY.headMinY && localY <= FATALITY.headMaxY;
+    return { ...best, head };
   }
 
   /** All living zombies inside a melee cone. */

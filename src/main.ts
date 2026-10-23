@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD, SCOOTER } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -222,8 +222,15 @@ const zombies = new ZombieManager(scene, world.colliders, {
   onKill(z) {
     state.kills++;
     director.addKill();
-    sfx.zombieDie();
-    fx.blood(z.pos.x, 1.1, z.pos.z);
+    if (z.exploded) {
+      // Fatality: the body bursts apart — the corpse hides, gore chunks fly.
+      z.mesh.visible = false;
+      fx.gore(z.pos.x, 1.15, z.pos.z);
+      sfx.gore();
+    } else {
+      sfx.zombieDie();
+      fx.blood(z.pos.x, 1.1, z.pos.z);
+    }
     const drop = rollDrop(state.threatLevel, rng);
     if (drop) spawnPickup(drop, z.pos.x, z.pos.z);
   },
@@ -249,7 +256,7 @@ const projectiles = new ProjectileManager(scene, world.colliders, zombies, fx, {
         const dmg = def.damage * (1 - d / (def.splashRadius ?? 5));
         const kx = ((z.pos.x - pos.x) / (d || 1)) * 6;
         const kz = ((z.pos.z - pos.z) / (d || 1)) * 6;
-        if (zombies.damage(z, dmg, kx, kz)) hud.hitMarker();
+        if (zombies.damage(z, dmg, kx, kz, { byPlayer: true })) hud.hitMarker();
       }
     }
     // self-damage if player too close
@@ -408,7 +415,7 @@ function fireWeapon(): void {
     viewModel.triggerSwing(def.cooldown * 0.7);
     const hits = zombies.meleeSweep(eye, player.flatDir, def.range, ((def.arcDeg ?? 70) * Math.PI) / 180 / 2);
     for (const z of hits) {
-      const killed = zombies.damage(z, def.damage, dir.x * 5, dir.z * 5);
+      const killed = zombies.damage(z, def.damage, dir.x * 5, dir.z * 5, { byPlayer: true });
       fx.blood(z.pos.x, 1.2, z.pos.z, dir.x, dir.z);
       hud.hitMarker();
       sfx.hitFlesh();
@@ -422,7 +429,7 @@ function fireWeapon(): void {
     if (Math.random() < 0.4) sfx.chainsaw(true);
     const hits = zombies.meleeSweep(eye, player.flatDir, def.range, 0.5);
     for (const z of hits) {
-      zombies.damage(z, def.damage * (def.chainTick ?? 0.12), dir.x * 2, dir.z * 2);
+      zombies.damage(z, def.damage * (def.chainTick ?? 0.12), dir.x * 2, dir.z * 2, { byPlayer: true });
       fx.blood(z.pos.x, 1.1, z.pos.z, dir.x, dir.z);
       hud.hitMarker();
     }
@@ -459,10 +466,12 @@ function fireWeapon(): void {
     }
     const hit = zombies.raycast(eye, d, worldDist);
     if (hit) {
-      zombies.damage(hit.z, def.damage, d.x * 3, d.z * 3);
-      fx.blood(hit.z.pos.x, Math.min(1.6, eye.y), hit.z.pos.z, d.x, d.z);
-      hud.hitMarker();
-      sfx.hitConfirm();
+      const dmg = def.damage * (hit.head ? FATALITY.headMult : 1);
+      zombies.damage(hit.z, dmg, d.x * 3, d.z * 3, { headshot: hit.head, byPlayer: true });
+      const hy = hit.head ? 1.7 : Math.min(1.6, eye.y);
+      fx.blood(hit.z.pos.x, hy, hit.z.pos.z, d.x, d.z);
+      hud.hitMarker(hit.head);
+      if (hit.head) sfx.headshot(); else sfx.hitConfirm();
     } else if (worldDist < def.range) {
       fx.sparks(eye.x + d.x * worldDist, eye.y + d.y * worldDist, eye.z + d.z * worldDist);
     }
@@ -829,7 +838,7 @@ requestAnimationFrame(frame);
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
   state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
-  renderer, camera, scene, hud, touch,
+  renderer, camera, scene, hud, touch, fx, halloween,
   step, fireWeapon, restart, scooterInteract,
   setFiring: (v: boolean) => { firing = v; },
   setKeys: (codes: string[]) => { keys.clear(); for (const c of codes) keys.add(c); },

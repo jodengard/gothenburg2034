@@ -83,8 +83,11 @@ export class Hud {
     }
   }
 
-  hitMarker(): void {
-    this.hitmarkT = 0.25;
+  hitMarker(headshot = false): void {
+    this.hitmarkT = headshot ? 0.4 : 0.25;
+    this.els.hitmark.textContent = headshot ? '✕ HEADSHOT' : '✕';
+    this.els.hitmark.style.color = headshot ? '#ffd75e' : '#ff4444';
+    this.els.hitmark.style.fontSize = headshot ? '22px' : '26px';
     this.els.hitmark.style.opacity = '1';
   }
 

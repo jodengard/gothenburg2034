@@ -441,7 +441,7 @@ export class Traffic {
       for (const z of zombies.active) {
         if (z.state === 'dead' || z.hitFlash > 0) continue; // per-zombie re-hit guard
         if (Math.hypot(z.pos.x - v.freeX, z.pos.z - v.freeZ) < SCOOTER.radius + ZOMBIE.radius + 0.25) {
-          zombies.damage(z, SCOOTER.roadkillDmg, hx * 7, hz * 7);
+          zombies.damage(z, SCOOTER.roadkillDmg, hx * 7, hz * 7, { byPlayer: true });
           v.spd *= 0.9;
         }
       }

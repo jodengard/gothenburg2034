@@ -36,6 +36,16 @@ export const SCOOTER = {
   respawnCd: 6,
 };
 
+/** Fatalities & headshots: aim for the skull, watch them pop. */
+export const FATALITY = {
+  headMult: 2.5, // headshot damage multiplier
+  headRadius: 0.24, // horizontal tolerance around the head axis (m)
+  headMinY: 1.48, // head hitbox in zombie-local space (mesh y + this)
+  headMaxY: 1.95,
+  chance: 0.15, // chance a player kill detonates the corpse (headshot kills always do)
+  chunks: 10, // gore chunks per detonation
+};
+
 export const ZOMBIE = {
   radius: 0.45,
   height: 1.8,
