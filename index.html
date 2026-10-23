@@ -125,15 +125,16 @@
       };
       window.addEventListener('error', function (e) {
         if (e.target && e.target.tagName === 'SCRIPT') window.__bootError('failed to load the game code (check your connection / the page path)');
-        else if (e.message) window.__bootError(e.message);
+        else if (e.message && !window.__game) window.__bootError(e.message);
       }, true);
       window.addEventListener('unhandledrejection', function (e) {
+        if (window.__game) return; // once the game is up it surfaces its own errors
         var r = e.reason;
         window.__bootError(String((r && r.message) || r || 'unknown error'));
       });
       setTimeout(function () {
         if (!window.__game) window.__bootError('the game took too long to start (WebGL unsupported, or a script failed to load)');
-      }, 20000);
+      }, 30000);
     })();
   </script>
   <script type="module" src="/src/main.ts"></script>

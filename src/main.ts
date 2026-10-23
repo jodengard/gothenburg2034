@@ -46,14 +46,20 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- Renderer / scene -------------------------------------------------------
-// Android Chrome releases the previous page's WebGL context asynchronously on
-// reload, and reclaims contexts from backgrounded tabs (very visible with many
-// tabs open). Creation can therefore fail transiently — retry a few times.
+// Mobile Chrome (especially with many tabs open) aggressively reclaims GPU
+// memory, and a full-resolution 4×-MSAA canvas plus a 2048 shadow map is often
+// enough to get the context discarded — that is the white screen and the
+// "Error creating WebGL context" on reload. Phones get a lighter profile:
+// no MSAA, capped pixel ratio, smaller shadow map (see also degradeQuality).
+const isMobile =
+  window.matchMedia('(pointer: coarse)').matches ||
+  new URLSearchParams(location.search).has('low');
+
 function createRenderer(): THREE.WebGLRenderer {
   let lastErr: unknown;
   for (let i = 0; i < 4; i++) {
     try {
-      return new THREE.WebGLRenderer({ antialias: true });
+      return new THREE.WebGLRenderer({ antialias: !isMobile });
     } catch (e) {
       lastErr = e;
       const until = performance.now() + 400; // let the GPU process free contexts
@@ -71,30 +77,52 @@ try {
   throw new Error('WebGL unavailable');
 }
 
+// Full-screen tap-to-reload overlay for context loss and fatal frame errors.
+function showOverlay(title: string, msg: string, btn: string, action: () => void): void {
+  if (document.getElementById('fatal-overlay')) return;
+  const d = document.createElement('div');
+  d.id = 'fatal-overlay';
+  d.style.cssText = 'position:fixed;inset:0;background:#000d;z-index:99;display:flex;' +
+    'flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff;' +
+    'font-family:sans-serif;text-align:center;padding:28px;cursor:pointer';
+  const t = document.createElement('div');
+  t.style.cssText = 'font-size:22px;font-weight:bold';
+  t.textContent = title;
+  const m = document.createElement('div');
+  m.style.cssText = 'opacity:.85;max-width:340px;line-height:1.5';
+  m.textContent = msg;
+  const b = document.createElement('div');
+  b.style.cssText = 'padding:14px 30px;background:#c0392b;border-radius:8px;font-weight:bold';
+  b.textContent = btn;
+  d.append(t, m, b);
+  d.addEventListener('click', action);
+  document.body.appendChild(d);
+}
+
 // If Chrome reclaims our context mid-session the canvas goes white; detect it,
 // stop rendering and offer a one-tap reload instead of a silent white screen.
 let contextLost = false;
 renderer.domElement.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
   contextLost = true;
-  const id = 'ctx-lost';
-  if (!document.getElementById(id)) {
-    const d = document.createElement('div');
-    d.id = id;
-    d.style.cssText = 'position:fixed;inset:0;background:#000d;z-index:99;display:flex;' +
-      'flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff;' +
-      'font-family:sans-serif;text-align:center;padding:28px;cursor:pointer';
-    d.innerHTML = '<div style="font-size:22px;font-weight:bold">Graphics were interrupted</div>' +
-      '<div style="opacity:.85;max-width:340px;line-height:1.5">Your browser reclaimed the 3D graphics ' +
-      '— usually caused by having many tabs open. Close a few tabs, then tap the button.</div>' +
-      '<div style="padding:14px 30px;background:#c0392b;border-radius:8px;font-weight:bold">TAP TO RELOAD</div>';
-    d.addEventListener('click', () => location.reload());
-    document.body.appendChild(d);
-  }
+  showOverlay('Graphics were interrupted',
+    'Your browser reclaimed the 3D graphics — usually caused by having many tabs open. Close a few tabs, then tap the button.',
+    'TAP TO RELOAD', () => location.reload());
 });
 renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
 
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Free the GPU promptly when the page enters the back/forward cache (so a
+// reload or another tab can create its context); pageshow then starts clean.
+window.addEventListener('pagehide', (e) => {
+  if ((e as PageTransitionEvent).persisted) {
+    try { renderer.forceContextLoss(); } catch { /* ignore */ }
+  }
+});
+window.addEventListener('pageshow', (e) => {
+  if ((e as PageTransitionEvent).persisted) location.reload();
+});
+
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -135,7 +163,7 @@ scene.add(sky);
 
 const sun = new THREE.DirectionalLight(0xffdcb0, 3.2);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
 sun.shadow.camera.near = 20;
 sun.shadow.camera.far = 420;
 sun.shadow.camera.left = -110;
@@ -569,44 +597,74 @@ let growlTimer = 3;
 let last = performance.now();
 let fpsAvg = 60;
 let deathShown = false;
+let errStreak = 0;
+let broken = false;
+let degraded = false;
+
+/** One-shot quality drop for phones that still can't hold ~30 fps. */
+function degradeQuality(): void {
+  degraded = true;
+  renderer.setPixelRatio(1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = false;
+  scene.traverse((o) => {
+    const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) mat.forEach((mm) => { mm.needsUpdate = true; });
+    else if (mat) mat.needsUpdate = true;
+  });
+}
 
 function frame(now: number): void {
+  if (broken) return;
   requestAnimationFrame(frame);
-  let dt = (now - last) / 1000;
-  last = now;
-  dt = Math.min(dt, 0.05);
-  fpsAvg += ((1 / Math.max(dt, 0.001)) - fpsAvg) * 0.05;
+  try {
+    let dt = (now - last) / 1000;
+    last = now;
+    dt = Math.min(dt, 0.05);
+    fpsAvg += ((1 / Math.max(dt, 0.001)) - fpsAvg) * 0.05;
 
-  if (state.phase === 'playing') {
-    step(dt);
-  } else if (state.phase === 'dead' && !deathShown) {
-    deathShown = true;
-    const best = saveHighScore({ time: state.time, kills: state.kills, threat: state.highestThreat });
-    const bm = Math.floor(best.time / 60);
-    const bs = Math.floor(best.time % 60);
-    hud.showGameOver(state.time, state.kills, state.highestThreat, `${bm}:${bs.toString().padStart(2, '0')}`);
-    touch?.setVisible(false);
-    document.exitPointerLock();
+    if (state.phase === 'playing') {
+      step(dt);
+      // phones that still struggle on the light profile: shed pixels + shadows
+      if (isMobile && !degraded && state.time > 6 && fpsAvg < 28) degradeQuality();
+    } else if (state.phase === 'dead' && !deathShown) {
+      deathShown = true;
+      const best = saveHighScore({ time: state.time, kills: state.kills, threat: state.highestThreat });
+      const bm = Math.floor(best.time / 60);
+      const bs = Math.floor(best.time % 60);
+      hud.showGameOver(state.time, state.kills, state.highestThreat, `${bm}:${bs.toString().padStart(2, '0')}`);
+      touch?.setVisible(false);
+      document.exitPointerLock();
+    }
+
+    // keep the shadow frustum centred on the player
+    sun.position.set(
+      player.pos.x + sunDir.x * 180,
+      sunDir.y * 180,
+      player.pos.z + sunDir.z * 180,
+    );
+    sun.target.position.set(player.pos.x, 0, player.pos.z);
+
+    // camera shake
+    if (fx.shake > 0) {
+      camera.position.x += (Math.random() - 0.5) * fx.shake * 0.12;
+      camera.position.y += (Math.random() - 0.5) * fx.shake * 0.12;
+      camera.rotation.z += (Math.random() - 0.5) * fx.shake * 0.05;
+    }
+
+    fx.update(dt);
+    hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
+    if (!contextLost) renderer.render(scene, camera);
+    errStreak = 0;
+  } catch (e) {
+    // A transient hiccup is survivable; a persistent one must never leave the
+    // player staring at a white canvas with a live HUD (the old mobile bug).
+    if (++errStreak < 20) return;
+    broken = true;
+    showOverlay('Something broke',
+      `${String((e as Error | null)?.message ?? e)} — tap the button to reload.`,
+      'TAP TO RELOAD', () => location.reload());
   }
-
-  // keep the shadow frustum centred on the player
-  sun.position.set(
-    player.pos.x + sunDir.x * 180,
-    sunDir.y * 180,
-    player.pos.z + sunDir.z * 180,
-  );
-  sun.target.position.set(player.pos.x, 0, player.pos.z);
-
-  // camera shake
-  if (fx.shake > 0) {
-    camera.position.x += (Math.random() - 0.5) * fx.shake * 0.12;
-    camera.position.y += (Math.random() - 0.5) * fx.shake * 0.12;
-    camera.rotation.z += (Math.random() - 0.5) * fx.shake * 0.05;
-  }
-
-  fx.update(dt);
-  hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
-  if (!contextLost) renderer.render(scene, camera);
 }
 
 function step(dt: number): void {
