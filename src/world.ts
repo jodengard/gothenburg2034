@@ -31,6 +31,8 @@ export interface World {
   tramRoutes: Vec2[][];
   busRoutes: Vec2[][];
   carRoutes: Vec2[][];
+  /** Streetlight lamp-head positions (arena frame) — used for cobweb dressing. */
+  lamps: Vec2[];
 }
 
 // --- map data types ----------------------------------------------------------
@@ -74,32 +76,55 @@ function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => 
   return tex;
 }
 
-/** Facade tile: 2x2 windows on a coloured wall, mapped at world scale. */
-function facadeTex(wall: string, win: string, lit: number, seed: number): THREE.CanvasTexture {
+/** Facade tile: 2x2 windows on a coloured wall, mapped at world scale.
+ *  Returns a colour map plus an emissive mask so lit windows glow at night. */
+function facadeTex(wall: string, win: string, lit: number, seed: number): { map: THREE.CanvasTexture; glow: THREE.CanvasTexture } {
   const rng = new RNG(seed);
-  return canvasTex(64, 64, (g) => {
+  const on = [0, 1, 2, 3].map(() => rng.chance(lit));
+  const map = canvasTex(64, 64, (g) => {
     g.fillStyle = wall; g.fillRect(0, 0, 64, 64);
-    for (let i = 0; i < 2; i++) {
-      for (let j = 0; j < 2; j++) {
-        g.fillStyle = rng.chance(lit) ? '#ffe9b8' : win;
-        g.fillRect(i * 32 + 7, j * 32 + 7, 18, 16);
-        g.fillStyle = 'rgba(0,0,0,0.25)';
-        g.fillRect(i * 32 + 7, j * 32 + 21, 18, 2); // sill shadow
-      }
-    }
+    on.forEach((o, k) => {
+      g.fillStyle = o ? '#ffe9b8' : win;
+      g.fillRect((k % 2) * 32 + 7, Math.floor(k / 2) * 32 + 7, 18, 16);
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      g.fillRect((k % 2) * 32 + 7, Math.floor(k / 2) * 32 + 21, 18, 2); // sill shadow
+    });
   });
+  const glow = canvasTex(64, 64, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, 64, 64);
+    on.forEach((o, k) => {
+      if (!o) return;
+      g.fillStyle = '#ffd9a0';
+      g.fillRect((k % 2) * 32 + 7, Math.floor(k / 2) * 32 + 7, 18, 16);
+    });
+  });
+  return { map, glow };
 }
 
-/** Glass curtain-wall tile: horizontal spandrel bands + vertical mullions. */
-function glassTex(): THREE.CanvasTexture {
-  return canvasTex(64, 64, (g) => {
+/** Glass curtain-wall tile: spandrel bands, mullions + randomly lit night flats. */
+function glassTex(): { map: THREE.CanvasTexture; glow: THREE.CanvasTexture } {
+  const rng = new RNG(77);
+  const litCells: [number, number][] = [];
+  for (let j = 0; j < 4; j++)
+    for (let i = 0; i < 4; i++)
+      if (rng.chance(0.26)) litCells.push([i, j]);
+  const paint = (g: CanvasRenderingContext2D) => {
+    for (const [i, j] of litCells) { g.fillStyle = '#ffd890'; g.fillRect(i * 16 + 2, j * 16 + 2, 12, 10); }
+  };
+  const map = canvasTex(64, 64, (g) => {
     g.fillStyle = '#39596b'; g.fillRect(0, 0, 64, 64);
     for (let j = 0; j < 4; j++) {
       g.fillStyle = '#7fa8b8'; g.fillRect(0, j * 16 + 2, 64, 10); // vision glass
       g.fillStyle = '#22333d'; g.fillRect(0, j * 16 + 12, 64, 4); // spandrel
     }
+    paint(g);
     for (let i = 0; i <= 4; i++) { g.fillStyle = '#4a5c64'; g.fillRect(i * 16 - 1, 0, 2, 64); }
   });
+  const glow = canvasTex(64, 64, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, 64, 64);
+    paint(g);
+  });
+  return { map, glow };
 }
 
 function noiseTex(base: string, spec: string, n: number, seed: number): THREE.CanvasTexture {
@@ -305,7 +330,7 @@ export function buildWorld(scene: THREE.Scene): World {
     walk: new THREE.MeshStandardMaterial({ map: walkTex, color: 0xc2c0bc, roughness: 0.92 }),
     grass: new THREE.MeshStandardMaterial({ map: grassTex, color: 0xa8b8a0, roughness: 1 }),
     park: new THREE.MeshStandardMaterial({ map: grassTex, color: 0x8aa878, roughness: 1 }),
-    marking: new THREE.MeshBasicMaterial({ color: 0xd9d9cc }),
+    marking: new THREE.MeshBasicMaterial({ color: 0x6f6f66 }),
     tramBed: new THREE.MeshStandardMaterial({ color: 0x54585e, roughness: 0.85 }),
     rail: new THREE.MeshStandardMaterial({ color: 0xc8ccd2, metalness: 0.9, roughness: 0.25 }),
     roof: new THREE.MeshStandardMaterial({ color: 0x3c4046, roughness: 0.95 }),
@@ -324,13 +349,19 @@ export function buildWorld(scene: THREE.Scene): World {
     ['#6b4f47', '#2f353b'], ['#8a9484', '#373f45'],
   ];
   const facadeMats = facadeDefs.map(([wall, win], i) => {
-    const t = facadeTex(wall, win, 0.12, 20 + i);
-    t.repeat.set(1 / 7, 1 / 7);
-    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 });
+    const { map, glow } = facadeTex(wall, win, 0.34, 20 + i);
+    map.repeat.set(1 / 7, 1 / 7);
+    glow.repeat.set(1 / 7, 1 / 7);
+    return new THREE.MeshStandardMaterial({
+      map, roughness: 0.9, emissive: 0xffb46a, emissiveMap: glow, emissiveIntensity: 1.4,
+    });
   });
-  const gTex = glassTex(); gTex.repeat.set(1 / 3.6, 1 / 3.6);
+  const { map: gTex, glow: gGlow } = glassTex();
+  gTex.repeat.set(1 / 3.6, 1 / 3.6);
+  gGlow.repeat.set(1 / 3.6, 1 / 3.6);
   const towerMat = new THREE.MeshStandardMaterial({
     map: gTex, color: 0xbcd4dc, metalness: 0.85, roughness: 0.16, envMapIntensity: 1.5,
+    emissive: 0xffc078, emissiveMap: gGlow, emissiveIntensity: 1.1,
   });
 
   // --- ground + parks ------------------------------------------------------------
@@ -518,6 +549,7 @@ export function buildWorld(scene: THREE.Scene): World {
   // --- streetlights along real streets -------------------------------------------------
   const poleGeos: THREE.BufferGeometry[] = [];
   const lampGeos: THREE.BufferGeometry[] = [];
+  const lampPts: Vec2[] = [];
   const poleGeo = new THREE.CylinderGeometry(0.07, 0.11, 6.2, 6);
   const armGeo = new THREE.BoxGeometry(0.09, 0.09, 1.6);
   const lampGeo = new THREE.SphereGeometry(0.24, 6, 6);
@@ -538,11 +570,30 @@ export function buildWorld(scene: THREE.Scene): World {
       lampSide.setPosition(x - nx * 0.8, 6.15, z - nz * 0.8);
       poleGeos.push(armGeo.clone().applyMatrix4(lampSide));
       lampGeos.push(lampGeo.clone().translate(x - nx * 1.5, 6.05, z - nz * 1.5));
+      lampPts.push({ x: x - nx * 1.5, z: z - nz * 1.5 });
       colliders.push(makeAABB(x, z, 0.3, 0.3, 6.2));
     }
   }
   addMesh(mergeGeometries(poleGeos, false), M.metal, true);
   addMesh(mergeGeometries(lampGeos, false), M.lamp, false, false);
+  // warm light pools on the pavement under every lamp (soft radial falloff so
+  // they read as light, not as painted discs; 1 draw call)
+  if (lampPts.length) {
+    const poolTex = canvasTex(64, 64, (g) => {
+      const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+      grad.addColorStop(0.55, 'rgba(255,255,255,0.35)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+    });
+    poolTex.colorSpace = THREE.SRGBColorSpace;
+    const poolGeo = new THREE.PlaneGeometry(6.4, 6.4);
+    const poolGeos = lampPts.map((lp) => poolGeo.clone().rotateX(-Math.PI / 2).translate(lp.x, 0.16, lp.z));
+    addMesh(mergeGeometries(poolGeos, false), new THREE.MeshBasicMaterial({
+      map: poolTex, color: 0xffa850, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }), false, false);
+  }
 
   // --- parked cars along the streets -----------------------------------------------------
   const carColors = [0x8a2f2f, 0x2f4a8a, 0x9aa0a6, 0x2f6a4a, 0xd8c860, 0x33363b, 0xc8c8c8];
@@ -635,6 +686,27 @@ export function buildWorld(scene: THREE.Scene): World {
       b.castShadow = true;
       root.add(b);
       colliders.push(makeAABB(x, z, 2.4, 0.5, 0.9));
+    }
+    // glass bus shelter on the north-side platform
+    const ry = Math.atan2(stopD.x, stopD.z);
+    const sx = stop.x + -stopD.z * 4.6, sz = stop.z + stopD.x * 4.6;
+    if (!inBuilding(sx, sz)) {
+      const rot = new THREE.Matrix4().makeRotationY(ry);
+      const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
+        const mm = rot.clone();
+        mm.setPosition(sx + ox * Math.cos(ry) + oz * Math.sin(ry), oy, sz - ox * Math.sin(ry) + oz * Math.cos(ry));
+        return g.clone().applyMatrix4(mm);
+      };
+      const frameGeos: THREE.BufferGeometry[] = [];
+      const postGeo = new THREE.BoxGeometry(0.12, 2.6, 0.12);
+      for (const [ox, oz] of [[-1.7, -0.6], [-1.7, 0.6], [1.7, -0.6], [1.7, 0.6]] as const) {
+        frameGeos.push(place(postGeo, ox, 1.3, oz));
+      }
+      frameGeos.push(place(new THREE.BoxGeometry(3.6, 0.14, 1.6), 0, 2.66, 0)); // roof
+      addMesh(mergeGeometries(frameGeos, false), M.metal, true);
+      addMesh(place(new THREE.BoxGeometry(3.4, 1.7, 0.06), 0, 1.55, -0.62), M.glass, false, false);
+      addMesh(place(new THREE.BoxGeometry(2.8, 0.08, 0.42), 0, 0.48, -0.3), M.wood, true);
+      colliders.push(makeAABB(sx, sz, 3.6, 1.6, 2.7));
     }
   }
 
@@ -748,5 +820,6 @@ export function buildWorld(scene: THREE.Scene): World {
     playerStart: { x: start.x, z: start.z, yaw },
     isSpawnValid,
     tramRoutes, busRoutes, carRoutes,
+    lamps: lampPts,
   };
 }

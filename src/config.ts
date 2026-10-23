@@ -165,11 +165,13 @@ export const WORLD = {
   centerX: 48,
   centerZ: -8,
   halfSize: 130,
-  fogNear: 60,
-  fogFar: 300,
-  skyColor: 0x8fa8bf,
-  fogColor: 0xc4ced8,
-  groundColor: 0x5c6652,
+  // Halloween night: low, dense, blue-black mist — the horizon dissolves and
+  // the Liseberg wheel looms out of it; Carlanderska stays fog-free.
+  fogNear: 28,
+  fogFar: 235,
+  skyColor: 0x2a3550,
+  fogColor: 0x161d2c,
+  groundColor: 0x1c2418,
 };
 
 export const PERF = {

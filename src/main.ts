@@ -5,6 +5,8 @@ import { PLAYER, WEAPONS, WORLD } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
+import { buildAtmosphere } from './atmos';
+import { buildHalloween } from './halloween';
 import { Traffic } from './traffic';
 import { Player } from './player';
 import { WeaponState, rollDrop, RELOAD_TIME } from './weapons';
@@ -130,7 +132,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.72;
+renderer.toneMappingExposure = 1.12;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -138,21 +140,22 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 scene.add(camera);
 scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
 
-// --- Sky, environment reflections, sun ---------------------------------------
+// --- Sky, environment reflections, moon ---------------------------------------
 const sky = new Sky();
 sky.scale.setScalar(20000);
 const sunDir = new THREE.Vector3();
 {
-  const elevation = 13, azimuth = 232; // low autumn afternoon sun over the SW
+  const elevation = 14, azimuth = 232; // harvest moon low over the SW
   const phi = THREE.MathUtils.degToRad(90 - elevation);
   const theta = THREE.MathUtils.degToRad(azimuth);
   sunDir.setFromSphericalCoords(1, phi, theta);
   const u = sky.material.uniforms;
-  u['turbidity'].value = 7;
-  u['rayleigh'].value = 2.2;
-  u['mieCoefficient'].value = 0.005;
-  u['mieDirectionalG'].value = 0.82;
-  u['sunPosition'].value.copy(sunDir);
+  u['turbidity'].value = 10;
+  u['rayleigh'].value = 1.1;
+  u['mieCoefficient'].value = 0.004;
+  u['mieDirectionalG'].value = 0.9;
+  // Sun BELOW the horizon: the Preetham shader then renders a deep night dome.
+  u['sunPosition'].value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 + 7), theta);
 }
 scene.add(sky);
 {
@@ -164,7 +167,7 @@ scene.add(sky);
   pmrem.dispose();
 }
 
-const sun = new THREE.DirectionalLight(0xffdcb0, 3.2);
+const sun = new THREE.DirectionalLight(0x93aedd, 0.95); // cold moonlight
 sun.castShadow = true;
 sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
 sun.shadow.camera.near = 20;
@@ -176,7 +179,7 @@ sun.shadow.camera.bottom = -110;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.6;
 scene.add(sun, sun.target);
-const hemi = new THREE.HemisphereLight(0xcfe0ee, 0x54604a, 0.35);
+const hemi = new THREE.HemisphereLight(0x33456e, 0x0c1008, 0.62);
 scene.add(hemi);
 
 window.addEventListener('resize', () => {
@@ -222,6 +225,9 @@ const zombies = new ZombieManager(scene, world.colliders, {
     sfx.zombieHurt();
   },
 });
+
+const atmos = buildAtmosphere(scene, world, sunDir);
+const halloween = buildHalloween(scene, world, atmos.bonfirePos);
 
 const projectiles = new ProjectileManager(scene, world.colliders, zombies, fx, {
   onExplosion(pos) {
@@ -658,6 +664,8 @@ function frame(now: number): void {
 
     fx.update(dt);
     landmarks.update(dt);
+    atmos.update(dt);
+    halloween.update(dt, zombies.active, camera.position);
     hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
     // safety net: some context losses never fire the event — catch them here
     if (!contextLost && renderer.getContext().isContextLost()) onContextLost();

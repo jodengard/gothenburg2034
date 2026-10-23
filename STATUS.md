@@ -18,7 +18,50 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: J (draw-call optimization + real Liseberg & Carlanderska landmarks) — verified
+## Current milestone: K (Halloween night: moon, mist, lit windows, jack-o'-lanterns, glowing eyes) — verified
+
+### Added — night + Halloween atmosphere (`src/atmos.ts`, ~8 draw calls)
+- **Harvest moon**: big low orange moon (canvas texture with halo + craters, additive,
+  fog-free) at the old sun azimuth; **900-star dome** (Points, fog-free) inside the far plane.
+- **Ground mist**: three large alpha-noise sheets at 0.9/2.0/3.1 m drifting and counter-
+  rotating — the classic fog-plane trick, reads as rolling mist around the towers.
+- **Embers/fireflies**: 70 additive Points rising and swaying over the arena.
+- **Bonfire**: stone ring + logs + flickering additive flame cones + the scene's only
+  dynamic PointLight (flicker via 3 summed sines). Placed 13–24 m in front of the player
+  spawn, validated open (`isSpawnValid`) and clear of all traffic routes (>6 m).
+
+### Added — Halloween dressing (`src/halloween.ts`, ~6 draw calls)
+- **46 jack-o'-lanterns**: 3 InstancedMeshes (body/glowing face/stem) sharing one matrix
+  per pumpkin; 10 ring the bonfire, the rest scattered on valid ground. Faces are a canvas
+  texture (triangular eyes + jagged grin, warm glow) on an additive-friendly basic material.
+- **Cobwebs**: corner-anchored web texture merged onto ~10 real streetlight poles
+  (new `World.lamps` export feeds the positions).
+- **Glowing zombie eyes**: ONE InstancedMesh (≤140) for the whole horde, matrices rebuilt
+  each frame from head position/facing; skips dead + beyond 55 m. The night-horde shot.
+
+### Changed — the night look
+- Sky: sun position pushed **below the horizon** (Preetham dome goes night-blue/black);
+  moonlight `0x93aedd` @0.95 replaces the sun, hemi `0x33456e/0x0c1008`, exposure 1.12.
+- Fog: near 60→28, far 300→235, colour `0x161d2c` — the horizon dissolves; the Liseberg
+  wheel ghosts in and out of the mist, Carlanderska stays fog-free on the skyline.
+- **Lit windows now glow**: `facadeTex`/`glassTex` emit a second emissive-mask canvas
+  (lit ratio 0.12→0.34 warm) wired as `emissiveMap` on facades + tower glass — the Gothia
+  Towers read as occupied skyscrapers at night. Road markings dimmed (unlit basic mat).
+- Streetlight **light pools**: one merged additive decal mesh with radial-falloff texture
+  under every lamp (1 draw call). Menu/title get the 🎃 treatment.
+
+### Verification
+- 32/32 tests, tsc clean, build clean. A/B on the same view/moment: milestone J build
+  212 draw calls (89 shadow) vs K build 228 — the whole night layer costs ~16 calls.
+- Fixed at dev time: bonfire merge mixed indexed+non-indexed geometry (mergeGeometries
+  → null → boot crash; `toNonIndexed()`); pumpkin instanced meshes need
+  `frustumCulled=false` (origin-bound sphere would cull the whole arena's worth).
+- Screenshots: spawn → lit towers + streetlight pools + pumpkins under stars; bonfire
+  close-up with flame glow + ringed jack-o'-lanterns; horde at 21 m with glowing red
+  eyes against the towers; Liseberg wheel + AtmosFear ghosting through the mist; the
+  harvest moon over the western ridge.
+
+## Previous milestone: J (draw-call optimization + real Liseberg & Carlanderska landmarks) — verified
 
 ### Added — landmarks outside the (invisible) boundary wall, at real OSM positions
 - `src/landmarks.ts`: **Liseberg** south of the towers — Lisebergshjulet Ferris wheel at
