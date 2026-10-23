@@ -34,6 +34,13 @@ export const SCOOTER = {
   deadDespawn: 5, // battery-dead husk removal
   fleet: 12, // scooters kept on the streets
   respawnCd: 6,
+  // --- trick riding: jump onto benches/car roofs and spin in the air ---
+  jumpVel: 7.6, // m/s — apex ~1.6 m, clears a car roof
+  gravity: 18,
+  stepUp: 0.55, // benches can be driven onto; car roofs need a jump
+  spinRate: 10, // rad/s visual spin while steering in the air
+  bigAirT: 0.62, // airtime (s) that counts as BIG AIR
+  whipDur: 0.34, // tailwhip flip duration (s)
 };
 
 /** Fatalities & headshots: aim for the skull, watch them pop. */

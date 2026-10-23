@@ -18,7 +18,40 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: O (scooter: fixed steering, third-person cam, Lisebergskanin player) — verified
+## Current milestone: P (scooter tricks on benches & parked cars) — verified
+
+### Added — rideable surfaces (`world.ts` + `collision.ts`)
+- `buildWorld` now exports `surfaces: RideSurface[]` — the rideable tops of **parked
+  cars (1.55 m), park benches (0.5 m) and tram-stop barriers (0.9 m)**, each linked to
+  its collider. `resolveCircleWorld` gained an optional `skip` predicate: a ridden
+  scooter passes through a surface once the deck is above it (step-up 0.55 m, so
+  benches can simply be **driven up onto**, car roofs need a jump).
+
+### Added — jump & vertical physics (`traffic.ts` + `config.ts` + `main.ts`)
+- The ridden scooter gained `y/vy` physics (gravity 18, jump impulse 7.6 → apex
+  ~1.6 m, clears a car roof). **Space / touch-jump** hops; landing on a surface snaps
+  the deck onto its top, riding off an edge drops you back to the asphalt.
+- Chase cam and the Lisebergskanin follow the hops (rabbit `y = 0.18 + v.y`, cam
+  height `2.15 + 0.85·v.y`); roadkill only triggers while low (`y < 0.55`), so
+  airborne you fly over the horde.
+
+### Added — trick scoring (`traffic.ts` → `state.ts` / `hud.ts` / `audio.ts`)
+- **Steer mid-air to spin** (10 rad/s): a full revolution lands as **360 SPIN +100**
+  (multi-revs: 720/1080…). **Jump again mid-air = TAILWHIP +50** (deck flips under
+  the rabbit), **BIG AIR +50** (airtime > 0.62 s), **ROOF TOP +75** for landing on a
+  car roof or barrier. Tricks stack (`360 SPIN + TAILWHIP + BIG AIR`), play a ding,
+  and pop a gold **`#trickpop`** banner plus a **Tricks** counter in the HUD; points
+  accumulate in `state.trickScore` for the run.
+- Verified in browser sim (20 assertions): jump apex 1.54 m & landing; BIG AIR,
+  360 SPIN (+150 with BIG AIR), TAILWHIP (+100) and ROOF TOP (+75) all scored;
+  drove a scooter **up onto a bench** (y snaps 0 → 0.5, mesh follows, rides off the
+  far end); parked car **blocks** ground driving but not above the roof; landing on
+  the roof scores; rabbit rides up with the deck; HUD popup text/opacity and counter
+  (`Tricks: 375`) correct; roadkill still credited on the ground.
+- Screenshots: rabbit parked on a red car roof, riding along a park bench, and
+  frozen mid-air at apex with a 4.3 rad spin under the chase cam.
+
+## Previous milestone: O (scooter: fixed steering, third-person cam, Lisebergskanin player) — verified
 
 ### Fixed — scooter steering was inverted
 - Forward is `(sin h, cos h)`, so **increasing** heading turns LEFT — the old

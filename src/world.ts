@@ -20,8 +20,19 @@ export interface ThrowableObject {
   taken: boolean;
 }
 
+/** A flat top a scooter can jump or drive onto: bench seat, car roof, barrier. */
+export interface RideSurface {
+  minX: number; maxX: number; minZ: number; maxZ: number;
+  /** rideable top height in meters */
+  top: number;
+  /** the matching collider — ridden scooters pass through it once above `top` */
+  col: AABB;
+}
+
 export interface World {
   colliders: AABB[];
+  /** Rideable tops (benches, parked cars, barriers) for scooter tricks. */
+  surfaces: RideSurface[];
   throwables: ThrowableObject[];
   /** Where the player starts: on Örgrytevägen, looking at the Gothia Towers. */
   playerStart: { x: number; z: number; yaw: number };
@@ -305,6 +316,11 @@ function* walk(pts: Pt[], step: number): Generator<{ x: number; z: number; dx: n
 export function buildWorld(scene: THREE.Scene): World {
   const rng = new RNG(20261023);
   const colliders: AABB[] = [];
+  const surfaces: RideSurface[] = [];
+  /** mark a just-pushed collider as rideable at height `top` */
+  const rideable = (col: AABB, top: number): void => {
+    surfaces.push({ minX: col.minX, maxX: col.maxX, minZ: col.minZ, maxZ: col.maxZ, top, col });
+  };
   const throwables: ThrowableObject[] = [];
   let tid = 0;
 
@@ -635,7 +651,9 @@ export function buildWorld(scene: THREE.Scene): World {
       }
       const c = Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8;
       const sn = Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8;
-      colliders.push(makeAABB(x, z, c, sn, 1.7));
+      const carCol = makeAABB(x, z, c, sn, 1.7);
+      colliders.push(carCol);
+      rideable(carCol, 1.55); // ride the roof — requires a jump
       carIdx++;
     }
   }
@@ -673,7 +691,9 @@ export function buildWorld(scene: THREE.Scene): World {
     };
     if (rng.chance(0.6)) {
       benchGeos.push(place(seatGeo, 0.45, 0), place(backGeo, 0.75, -0.26));
-      colliders.push(makeAABB(x, z, 1.9, 0.7, 1));
+      const benchCol = makeAABB(x, z, 1.9, 0.7, 1);
+      colliders.push(benchCol);
+      rideable(benchCol, 0.5); // the seat: low enough to just drive up onto
     } else {
       binGeos.push(binGeo.clone().translate(x, 0.43, z));
       colliders.push(makeAABB(x, z, 0.65, 0.65, 0.85));
@@ -690,7 +710,9 @@ export function buildWorld(scene: THREE.Scene): World {
       b.rotation.y = Math.atan2(stopD.x, stopD.z);
       b.castShadow = true;
       root.add(b);
-      colliders.push(makeAABB(x, z, 2.4, 0.5, 0.9));
+      const barCol = makeAABB(x, z, 2.4, 0.5, 0.9);
+      colliders.push(barCol);
+      rideable(barCol, 0.9); // hop the tram-stop barriers
     }
     // glass bus shelter on the north-side platform
     const ry = Math.atan2(stopD.x, stopD.z);
@@ -821,7 +843,7 @@ export function buildWorld(scene: THREE.Scene): World {
   };
 
   return {
-    colliders, throwables,
+    colliders, surfaces, throwables,
     playerStart: { x: start.x, z: start.z, yaw },
     isSpawnValid,
     tramRoutes, busRoutes, carRoutes,

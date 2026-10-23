@@ -152,6 +152,7 @@ describe('director', () => {
     const d = new Director();
     const world: World = {
       colliders: [],
+      surfaces: [],
       throwables: [],
       playerStart: { x: 0, z: 0, yaw: 0 },
       isSpawnValid: (x, z) => Math.hypot(x, z) < 120,
@@ -171,7 +172,7 @@ describe('director', () => {
   });
   it('respects population cap', () => {
     const d = new Director();
-    const world: World = { colliders: [], throwables: [], playerStart: { x: 0, z: 0, yaw: 0 }, isSpawnValid: () => true, tramRoutes: [], busRoutes: [], carRoutes: [], lamps: [] };
+    const world: World = { colliders: [], surfaces: [], throwables: [], playerStart: { x: 0, z: 0, yaw: 0 }, isSpawnValid: () => true, tramRoutes: [], busRoutes: [], carRoutes: [], lamps: [] };
     const rng = new RNG(5);
     let spawned = 0;
     for (let i = 0; i < 200; i++) {

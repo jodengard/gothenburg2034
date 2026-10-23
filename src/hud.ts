@@ -9,6 +9,8 @@ export class Hud {
     hpwrap: $('hp-wrap'),
     time: $('hud-time'),
     kills: $('hud-kills'),
+    tricks: $('hud-tricks'),
+    trickpop: $('trickpop'),
     threat: $('hud-threat'),
     weapon: $('hud-weapon'),
     ammo: $('hud-ammo'),
@@ -30,6 +32,7 @@ export class Hud {
   };
 
   private hitmarkT = 0;
+  private trickT = 0;
   private lastWeapon = '';
 
   update(
@@ -43,6 +46,8 @@ export class Hud {
     const sec = Math.floor(s.time % 60);
     this.els.time.textContent = `${m}:${sec.toString().padStart(2, '0')}`;
     this.els.kills.textContent = String(s.kills);
+    this.els.tricks.textContent = `Tricks: ${s.trickScore}`;
+    this.els.tricks.style.display = s.trickScore > 0 ? '' : 'none';
     this.els.threat.textContent = '★'.repeat(s.threatLevel) + '☆'.repeat(5 - s.threatLevel);
     this.els.threat.style.color = s.threatLevel >= 4 ? '#ff5544' : s.threatLevel >= 3 ? '#ffaa33' : '#ffd75e';
     if (s.weaponId !== this.lastWeapon) {
@@ -74,6 +79,10 @@ export class Hud {
       this.hitmarkT -= dt;
       this.els.hitmark.style.opacity = String(Math.max(0, this.hitmarkT * 4));
     }
+    if (this.trickT > 0) {
+      this.trickT -= dt;
+      this.els.trickpop.style.opacity = String(Math.max(0, Math.min(1, this.trickT * 2.5)));
+    }
     if (damageFlash > 0.05) {
       const ang = damageDir - yaw;
       this.els.dmgdir.style.opacity = String(damageFlash);
@@ -89,6 +98,12 @@ export class Hud {
     this.els.hitmark.style.color = headshot ? '#ffd75e' : '#ff4444';
     this.els.hitmark.style.fontSize = headshot ? '22px' : '26px';
     this.els.hitmark.style.opacity = '1';
+  }
+
+  trick(text: string): void {
+    this.trickT = 1.7;
+    this.els.trickpop.textContent = text;
+    this.els.trickpop.style.opacity = '1';
   }
 
   showPrompt(text: string): void {

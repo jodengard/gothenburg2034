@@ -14,7 +14,7 @@ import { AABB, Vec2, resolveCircleWorld } from './collision';
 import { PLAYER, ZOMBIE, SCOOTER } from './config';
 import { RNG } from './rng';
 import { sfx } from './audio';
-import type { World } from './world';
+import type { World, RideSurface } from './world';
 import type { ZombieManager, Zombie, RideAnchor } from './zombie';
 
 // --- path utilities (pure, unit-tested) --------------------------------------
@@ -98,6 +98,12 @@ interface Vehicle {
   despawnT: number;
   /** free-drive state while ridden (off-path) */
   heading: number; spd: number; freeX: number; freeZ: number;
+  // --- trick riding while ridden ---
+  /** height above ground: jumping, riding benches/car roofs */
+  y: number; vy: number;
+  /** airtime, visual spin, accumulated spin, tailwhips, whip flip timer */
+  airT: number; spin: number; spinAccum: number; whips: number; whipT: number;
+  jumpHeld: boolean;
 }
 
 const MAT = {
@@ -249,11 +255,18 @@ export class Traffic {
   private zm: ZombieManager | null = null;
   private riddenV: Vehicle | null = null;
   private respawnCd = 0;
+  /** rideable tops for trick jumps (benches, parked cars, barriers) */
+  private surfaces: RideSurface[];
+  private rideTop = new Map<AABB, number>();
+  /** called on a clean landing with a scored trick */
+  onTrick: ((label: string, points: number) => void) | null = null;
 
   constructor(scene: THREE.Scene, world: World) {
     scene.add(this.root);
     const rng = this.rng;
     this.colliders = world.colliders;
+    this.surfaces = world.surfaces;
+    for (const s of world.surfaces) this.rideTop.set(s.col, s.top);
     if (world.tramRoutes.length === 1) {
       // The whole tram network chains into one long route: run line 5 on the
       // west half and line 6 on the east half so both lines exist and never
@@ -310,6 +323,7 @@ export class Traffic {
       vstate: 'route', rider: null, anchor: { x: 0, z: 0, heading: 0 },
       battery: kind === 'scooter' ? rng.range(6, SCOOTER.batterySeconds) : 0,
       despawnT: 0, heading: 0, spd: 0, freeX: 0, freeZ: 0,
+      y: 0, vy: 0, airT: 0, spin: 0, spinAccum: 0, whips: 0, whipT: 0, jumpHeld: false,
     };
     this.vehicles.push(v);
     this.root.add(group);
@@ -370,6 +384,8 @@ export class Traffic {
     v.freeX = v.group.position.x;
     v.freeZ = v.group.position.z;
     v.spd = 0;
+    v.y = 0; v.vy = 0; v.airT = 0; v.spin = 0; v.spinAccum = 0;
+    v.whips = 0; v.whipT = 0; v.jumpHeld = false;
     v.group.rotation.z = 0;
     const mat = (v.group as THREE.Mesh).material as THREE.MeshStandardMaterial;
     mat.transparent = false; // cancel any tow-away blink
@@ -384,6 +400,8 @@ export class Traffic {
     this.riddenV = null;
     v.vstate = 'dropped';
     v.despawnT = SCOOTER.dismountDespawn;
+    v.y = 0; v.vy = 0; v.group.position.y = 0; // hop off: the scooter drops to the street
+    v.group.rotation.x = 0;
     v.group.rotation.z = 0.16; // kicked over onto its side a bit
   }
 
@@ -395,7 +413,7 @@ export class Traffic {
    */
   updateRidden(
     dt: number,
-    input: { fwd: boolean; back: boolean; left: boolean; right: boolean },
+    input: { fwd: boolean; back: boolean; left: boolean; right: boolean; jump: boolean },
     player: { pos: Vec2; vel: THREE.Vector3 },
     zombies: ZombieManager,
   ): void {
@@ -424,12 +442,64 @@ export class Traffic {
     const hx = Math.sin(v.heading), hz = Math.cos(v.heading);
     v.freeX += hx * v.spd * dt;
     v.freeZ += hz * v.spd * dt;
+    // rideable tops only block while the deck is below them — above, you roll over
     const p: Vec2 = { x: v.freeX, z: v.freeZ };
-    resolveCircleWorld(this.colliders, p, SCOOTER.radius);
+    resolveCircleWorld(this.colliders, p, SCOOTER.radius, (a) => {
+      const top = this.rideTop.get(a);
+      return top !== undefined && top <= v.y + SCOOTER.stepUp;
+    });
     v.freeX = p.x;
     v.freeZ = p.z;
-    v.group.position.set(v.freeX, 0, v.freeZ);
-    v.group.rotation.y = v.heading;
+
+    // --- vertical: jump, benches, parked-car roofs -------------------------------
+    const support = this.supportY(v.freeX, v.freeZ, v.y);
+    if (input.jump && powered && v.y <= support + 0.001 && v.vy <= 0) {
+      v.vy = SCOOTER.jumpVel; // full charge clears a car roof
+      sfx.jump();
+    }
+    v.vy -= SCOOTER.gravity * dt;
+    v.y += v.vy * dt;
+    let landed = false;
+    if (v.y <= support) {
+      if (v.vy < -7 && v.airT > 0.1) sfx.thud(); // slappy landings
+      v.y = support;
+      v.vy = 0;
+      landed = v.airT > 0.05;
+    }
+    const airborne = v.y > support + 0.001;
+
+    // --- tricks: steer to spin, jump again to tailwhip, score on the landing -----
+    if (airborne) {
+      v.airT += dt;
+      if (input.jump && !v.jumpHeld && v.airT > 0.1) {
+        v.whips++;
+        v.whipT = SCOOTER.whipDur;
+        sfx.swing();
+      }
+      v.spin += steer * SCOOTER.spinRate * dt;
+      v.spinAccum += steer * SCOOTER.spinRate * dt;
+    } else if (landed) {
+      const tricks: string[] = [];
+      let pts = 0;
+      const spins = Math.floor(Math.abs(v.spinAccum) / (Math.PI * 2));
+      if (spins > 0) { tricks.push(spins > 1 ? `${spins * 360} SPIN` : '360 SPIN'); pts += spins * 100; }
+      if (v.whips > 0) { tricks.push(v.whips > 1 ? `${v.whips}× TAILWHIP` : 'TAILWHIP'); pts += v.whips * 50; }
+      if (v.airT > SCOOTER.bigAirT) { tricks.push('BIG AIR'); pts += 50; }
+      if (support > 0.8) { tricks.push('ROOF TOP'); pts += 75; }
+      if (pts > 0) {
+        sfx.trick();
+        this.onTrick?.(tricks.join(' + '), pts);
+      }
+      v.airT = 0; v.spin = 0; v.spinAccum = 0; v.whips = 0;
+    }
+    v.jumpHeld = input.jump;
+    if (v.whipT > 0) v.whipT = Math.max(0, v.whipT - dt);
+
+    v.group.position.set(v.freeX, v.y, v.freeZ);
+    v.group.rotation.y = v.heading + v.spin;
+    v.group.rotation.x = v.whipT > 0
+      ? Math.sin(((SCOOTER.whipDur - v.whipT) / SCOOTER.whipDur) * Math.PI) * 0.85 // tailwhip flip
+      : 0;
     v.group.rotation.z = steer * Math.max(0, Math.min(1, v.spd / SCOOTER.maxSpeed)) * 0.22;
 
     // the player rides along
@@ -439,7 +509,7 @@ export class Traffic {
     player.vel.z = hz * v.spd;
 
     // roadkill: mow down the horde (kills route through the manager)
-    if (Math.abs(v.spd) > SCOOTER.roadkillMinSpeed) {
+    if (Math.abs(v.spd) > SCOOTER.roadkillMinSpeed && v.y < 0.55) {
       for (const z of zombies.active) {
         if (z.state === 'dead' || z.hitFlash > 0) continue; // per-zombie re-hit guard
         if (Math.hypot(z.pos.x - v.freeX, z.pos.z - v.freeZ) < SCOOTER.radius + ZOMBIE.radius + 0.25) {
@@ -454,8 +524,24 @@ export class Traffic {
       this.riddenV = null;
       v.vstate = 'dead';
       v.despawnT = SCOOTER.deadDespawn;
+      v.y = 0; v.vy = 0; v.group.position.y = 0; // settle onto the street
+      v.group.rotation.x = 0;
       v.group.rotation.z = 0.16;
     }
+  }
+
+  /**
+   * Highest rideable top (bench seat, car roof, barrier) under (x, z) that the
+   * deck can rest on from height `fromY` — step-up limited so you can drive up
+   * a bench but need a jump for a car roof. 0 = asphalt.
+   */
+  private supportY(x: number, z: number, fromY: number): number {
+    let best = 0;
+    for (const s of this.surfaces) {
+      if (s.top <= best || s.top > fromY + SCOOTER.stepUp) continue;
+      if (x >= s.minX - 0.15 && x <= s.maxX + 0.15 && z >= s.minZ - 0.15 && z <= s.maxZ + 0.15) best = s.top;
+    }
+    return best;
   }
 
   /** Rider shot dead: the scooter coasts to a stop and waits to be hijacked. */

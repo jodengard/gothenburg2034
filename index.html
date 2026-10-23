@@ -29,6 +29,8 @@
     #top-left { position: absolute; top: 18px; left: 24px; color: #fff; text-shadow: 0 1px 2px #000; }
     #hud-time { font-size: 30px; font-weight: bold; }
     #hud-kills { font-size: 16px; margin-top: 2px; }
+    #hud-tricks { font-size: 16px; margin-top: 2px; color: #ffd75e; text-shadow: 0 1px 2px #000; display: none; }
+    #trickpop { position: absolute; left: 50%; top: 28%; transform: translateX(-50%); color: #ffd75e; font-size: 34px; font-weight: bold; letter-spacing: 2px; text-shadow: 0 2px 6px #000, 0 0 20px #ff880088; opacity: 0; white-space: nowrap; }
     #hud-threat { font-size: 22px; color: #ffd75e; margin-top: 2px; letter-spacing: 2px; }
 
     #hud-fps { position: absolute; top: 18px; right: 24px; color: #ffffff77; font-size: 12px; }
@@ -61,9 +63,11 @@
   <div id="hud">
     <div id="crosshair"></div>
     <div id="hitmark">✕</div>
+    <div id="trickpop"></div>
     <div id="top-left">
       <div id="hud-time">0:00</div>
       <div id="hud-kills">Kills: 0</div>
+      <div id="hud-tricks">Tricks: 0</div>
       <div id="hud-threat">★☆☆☆☆</div>
     </div>
     <div id="hud-fps"></div>

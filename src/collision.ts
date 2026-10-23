@@ -91,9 +91,17 @@ export function segmentBlocked(o: Vec2, dir: Vec2, maxDist: number, colliders: r
   return false;
 }
 
-/** Resolve a circle against a list of AABBs (mutates and returns p). */
-export function resolveCircleWorld(colliders: readonly AABB[], p: Vec2, r: number): Vec2 {
+/**
+ * Resolve a circle against a list of AABBs (mutates and returns p).
+ * Optional `skip` predicate lets callers ignore colliders — e.g. a ridden
+ * scooter passes through rideable surfaces (benches, car roofs) it is above.
+ */
+export function resolveCircleWorld(
+  colliders: readonly AABB[], p: Vec2, r: number,
+  skip?: (a: AABB) => boolean,
+): Vec2 {
   for (const c of colliders) {
+    if (skip && skip(c)) continue;
     const np = resolveCircleAABB(c, p, r);
     p.x = np.x;
     p.z = np.z;

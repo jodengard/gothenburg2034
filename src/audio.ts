@@ -129,6 +129,17 @@ export const sfx = {
     playNoise(0.35, 700, 0.5, 0.55);
     playTone(70, 0.3, 0.45, 'square', -30);
   },
+  jump(): void {
+    playTone(240, 0.12, 0.16, 'square', 280);
+  },
+  thud(): void {
+    playNoise(0.18, 160, 0.5, 0.6);
+    playTone(55, 0.16, 0.45, 'sine', -20);
+  },
+  trick(): void {
+    playTone(660, 0.1, 0.18, 'square');
+    playTone(990, 0.16, 0.16, 'square', 180);
+  },
   pickup(): void {
     playTone(660, 0.08, 0.2, 'square');
     playTone(990, 0.12, 0.2, 'square');

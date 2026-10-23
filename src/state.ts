@@ -6,6 +6,7 @@ export interface GameState {
   phase: Phase;
   time: number; // survival seconds
   kills: number;
+  trickScore: number; // scooter trick points (spins, tailwhips, roof tops)
   health: number;
   threatLevel: number; // 1..5
   highestThreat: number;
@@ -22,6 +23,7 @@ export const state: GameState = {
   phase: 'menu',
   time: 0,
   kills: 0,
+  trickScore: 0,
   health: 100,
   threatLevel: 1,
   highestThreat: 1,
@@ -38,6 +40,7 @@ export function resetState(): void {
   state.phase = 'playing';
   state.time = 0;
   state.kills = 0;
+  state.trickScore = 0;
   state.health = 100;
   state.threatLevel = 1;
   state.highestThreat = 1;

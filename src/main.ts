@@ -210,6 +210,10 @@ rabbit.visible = false;
 scene.add(rabbit);
 const chaseCam = new THREE.Vector3();
 let wasRiding = false;
+traffic.onTrick = (label, pts) => {
+  state.trickScore += pts;
+  hud.trick(`${label} +${pts}`);
+};
 const packs = new PackManager();
 const director = new Director();
 
@@ -738,7 +742,8 @@ function step(dt: number): void {
   player.input.left = keys.has('KeyA');
   player.input.right = keys.has('KeyD');
   player.input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || (touch?.sprint ?? false);
-  player.input.jump = keys.has('Space') || touchJump;
+  const jumpPressed = keys.has('Space') || touchJump;
+  player.input.jump = jumpPressed;
   touchJump = false;
   player.input.moveX = touch?.moveX ?? 0;
   player.input.moveY = touch?.moveY ?? 0;
@@ -753,6 +758,7 @@ function step(dt: number): void {
       back: keys.has('KeyS') || (tx ? tx.moveY > 0.45 : false),
       left: keys.has('KeyA') || (tx ? tx.moveX < -0.3 : false),
       right: keys.has('KeyD') || (tx ? tx.moveX > 0.3 : false),
+      jump: jumpPressed, // Space / touch jump: hop, or tailwhip mid-air
     }, player, zombies);
     // battery may have died mid-frame, stranding the rider
     player.riding = traffic.ridden !== null;
@@ -766,19 +772,20 @@ function step(dt: number): void {
     player.yaw = v.heading + Math.PI; // shots fly where the scooter points
     player.pitch = 0;
     rabbit.visible = true;
-    rabbit.position.set(v.freeX, 0.18, v.freeZ);
-    rabbit.rotation.set(0, v.heading, v.group.rotation.z); // lean with the scooter
+    rabbit.position.set(v.freeX, 0.18 + v.y, v.freeZ);
+    rabbit.rotation.copy(v.group.rotation); // lean, spin and tailwhip with the scooter
+    const camY = 2.15 + v.y * 0.85; // chase cam follows the hops a little
     const tx = v.freeX - hx * 3.4, tz = v.freeZ - hz * 3.4;
     if (!wasRiding) {
-      chaseCam.set(tx, 2.15, tz);
+      chaseCam.set(tx, camY, tz);
       wasRiding = true;
     }
     const k = Math.min(1, dt * 7);
     chaseCam.x += (tx - chaseCam.x) * k;
-    chaseCam.y += (2.15 - chaseCam.y) * k;
+    chaseCam.y += (camY - chaseCam.y) * k;
     chaseCam.z += (tz - chaseCam.z) * k;
     camera.position.set(chaseCam.x, chaseCam.y, chaseCam.z);
-    camera.lookAt(v.freeX + hx * 1.8, 1.05, v.freeZ + hz * 1.8);
+    camera.lookAt(v.freeX + hx * 1.8, 1.05 + v.y, v.freeZ + hz * 1.8);
   } else if (wasRiding || rabbit.visible) {
     rabbit.visible = false;
     wasRiding = false;
