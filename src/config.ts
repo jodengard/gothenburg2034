@@ -17,6 +17,25 @@ export const PLAYER = {
   pickupRange: 2.4,
 };
 
+/** Hijackable VOI scooters: zombie hooligans ride them; kill the rider, take it. */
+export const SCOOTER = {
+  batterySeconds: 20, // full-throttle ride time on a full charge
+  maxSpeed: 9.5,
+  reverseSpeed: 2.6,
+  accel: 7.5,
+  steerRate: 1.8, // rad/s at full speed
+  radius: 0.5, // collision radius while riding
+  eyeLift: 0.15, // camera rise standing on the deck
+  mountRange: 2.4,
+  roadkillDmg: 60,
+  roadkillMinSpeed: 2.5,
+  dropDespawn: 30, // seconds a riderless scooter waits before being "towd away"
+  dismountDespawn: 12,
+  deadDespawn: 5, // battery-dead husk removal
+  fleet: 12, // scooters kept on the streets
+  respawnCd: 6,
+};
+
 export const ZOMBIE = {
   radius: 0.45,
   height: 1.8,

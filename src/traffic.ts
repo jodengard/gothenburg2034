@@ -10,12 +10,12 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Vec2 } from './collision';
-import { PLAYER, ZOMBIE } from './config';
+import { AABB, Vec2, resolveCircleWorld } from './collision';
+import { PLAYER, ZOMBIE, SCOOTER } from './config';
 import { RNG } from './rng';
 import { sfx } from './audio';
 import type { World } from './world';
-import type { ZombieManager } from './zombie';
+import type { ZombieManager, Zombie, RideAnchor } from './zombie';
 
 // --- path utilities (pure, unit-tested) --------------------------------------
 
@@ -57,6 +57,15 @@ export function distPointSeg(
 
 type Kind = 'tram' | 'bus' | 'car' | 'scooter';
 
+/**
+ * Scooter life cycle: a hooligan zombie rides it on its route ('route');
+ * shoot the rider and it coasts to a stop, waiting to be hijacked
+ * ('dropped'); hijack it and you drive ('ridden'); out of battery it becomes
+ * a blinking husk ('dead') until it is towed away. Dropped ones are towed
+ * away too — the streets always refill to a full fleet of new ones.
+ */
+export type VehicleState = 'route' | 'dropped' | 'ridden' | 'dead';
+
 const SPEC: Record<Kind, {
   speed: number; halfLen: number; halfW: number; laneOff: number;
   playerDmg: number; zombieDmg: number; shake: number;
@@ -77,6 +86,18 @@ interface Vehicle {
   shadowOn: boolean;
   /** scooter weave: elapsed time, per-vehicle phase, lateral wobble amplitude */
   t: number; phase: number; swerveAmp: number;
+  // --- scooter hooliganism ---
+  vstate: VehicleState;
+  /** zombie riding this scooter (scooters only); null once the rider is dead */
+  rider: Zombie | null;
+  /** position/heading shared with the rider zombie each frame */
+  anchor: RideAnchor;
+  /** seconds of ride time left in the battery */
+  battery: number;
+  /** tow-away countdown while dropped/dead */
+  despawnT: number;
+  /** free-drive state while ridden (off-path) */
+  heading: number; spd: number; freeX: number; freeZ: number;
 }
 
 const MAT = {
@@ -222,10 +243,17 @@ function buildScooter(): THREE.Mesh {
 export class Traffic {
   readonly vehicles: Vehicle[] = [];
   private root = new THREE.Group();
+  private rng = new RNG(4242);
+  private colliders: AABB[];
+  private scooterRoutes: Vec2[][];
+  private zm: ZombieManager | null = null;
+  private riddenV: Vehicle | null = null;
+  private respawnCd = 0;
 
   constructor(scene: THREE.Scene, world: World) {
     scene.add(this.root);
-    const rng = new RNG(4242);
+    const rng = this.rng;
+    this.colliders = world.colliders;
     if (world.tramRoutes.length === 1) {
       // The whole tram network chains into one long route: run line 5 on the
       // west half and line 6 on the east half so both lines exist and never
@@ -253,25 +281,25 @@ export class Traffic {
       }
     });
     // VOI scooters: a couple on every car route (capped) — they are everywhere
-    const scooterRoutes = world.carRoutes.length ? world.carRoutes : world.busRoutes;
-    for (let i = 0; scooterRoutes.length && i < 12; i++) {
-      this.spawn('scooter', scooterRoutes[i % scooterRoutes.length], rng, 0);
+    this.scooterRoutes = world.carRoutes.length ? world.carRoutes : world.busRoutes;
+    for (let i = 0; this.scooterRoutes.length && i < SCOOTER.fleet; i++) {
+      this.spawn('scooter', this.scooterRoutes[i % this.scooterRoutes.length], rng, 0);
     }
   }
 
-  private spawn(kind: Kind, pts: Vec2[], rng: RNG, line: number, range?: [number, number]): void {
-    if (pts.length < 2) return;
+  private spawn(kind: Kind, pts: Vec2[], rng: RNG, line: number, range?: [number, number]): Vehicle | null {
+    if (pts.length < 2) return null;
     const path = makePath(pts);
     const spec = SPEC[kind];
-    if (path.total < spec.halfLen * 2 + 20) return;
+    if (path.total < spec.halfLen * 2 + 20) return null;
     const sMin = range ? range[0] : spec.halfLen + 4;
     const sMax = range ? range[1] : path.total - spec.halfLen - 4;
-    if (sMax - sMin < 10) return;
+    if (sMax - sMin < 10) return null;
     const group = kind === 'tram' ? buildTram(line)
       : kind === 'bus' ? buildBus(line)
       : kind === 'scooter' ? buildScooter()
       : buildCar(rng);
-    this.vehicles.push({
+    const v: Vehicle = {
       kind, path, group, laneOff: spec.laneOff,
       speed: kind === 'car' || kind === 'scooter'
         ? (kind === 'car' ? rng.range(6.5, 9.5) : rng.range(3.8, 6.8))
@@ -279,8 +307,13 @@ export class Traffic {
       s: rng.range(sMin, sMax), sMin, sMax,
       dir: rng.chance(0.5) ? 1 : -1, hitCd: 0, hornCd: 0, shadowOn: true,
       t: 0, phase: rng.range(0, Math.PI * 2), swerveAmp: kind === 'scooter' ? rng.range(0.5, 1.0) : 0,
-    });
+      vstate: 'route', rider: null, anchor: { x: 0, z: 0, heading: 0 },
+      battery: kind === 'scooter' ? rng.range(6, SCOOTER.batterySeconds) : 0,
+      despawnT: 0, heading: 0, spd: 0, freeX: 0, freeZ: 0,
+    };
+    this.vehicles.push(v);
     this.root.add(group);
+    return v;
   }
 
   /** Vehicles beyond this distance stop casting shadows (biggest mobile cost). */
@@ -288,6 +321,214 @@ export class Traffic {
     if (v.shadowOn === on) return;
     v.shadowOn = on;
     v.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = on; });
+  }
+
+  // --- scooter hooligans & hijacking ------------------------------------------
+
+  /** Give every street scooter a zombie rider. Called once after boot. */
+  attachZombies(zm: ZombieManager): void {
+    this.zm = zm;
+    for (const v of this.vehicles) {
+      if (v.kind === 'scooter') this.attachRider(v);
+    }
+  }
+
+  private attachRider(v: Vehicle): void {
+    if (!this.zm) return;
+    const c = samplePath(v.path, v.s);
+    const hx = c.dx * v.dir, hz = c.dz * v.dir;
+    const rx = -hz, rz = hx;
+    const x = c.x + rx * v.laneOff, z = c.z + rz * v.laneOff;
+    const zom = this.zm.spawn(x, z, 0, 1);
+    zom.ride = v.anchor;
+    zom.mesh.position.y = 0.18; // standing on the deck
+    v.rider = zom;
+  }
+
+  /** Nearest hijackable (dropped, charged) scooter within reach, if any. */
+  findMount(px: number, pz: number): Vehicle | null {
+    let best: Vehicle | null = null;
+    let bd = SCOOTER.mountRange;
+    for (const v of this.vehicles) {
+      if (v.kind !== 'scooter' || v.vstate !== 'dropped' || v.battery <= 0.2) continue;
+      const d = Math.hypot(v.group.position.x - px, v.group.position.z - pz);
+      if (d < bd) {
+        bd = d;
+        best = v;
+      }
+    }
+    return best;
+  }
+
+  get ridden(): Vehicle | null {
+    return this.riddenV;
+  }
+
+  mount(v: Vehicle): void {
+    v.vstate = 'ridden';
+    v.heading = v.group.rotation.y;
+    v.freeX = v.group.position.x;
+    v.freeZ = v.group.position.z;
+    v.spd = 0;
+    v.group.rotation.z = 0;
+    const mat = (v.group as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    mat.transparent = false; // cancel any tow-away blink
+    mat.opacity = 1;
+    this.setShadow(v, true);
+    this.riddenV = v;
+  }
+
+  dismount(): void {
+    const v = this.riddenV;
+    if (!v) return;
+    this.riddenV = null;
+    v.vstate = 'dropped';
+    v.despawnT = SCOOTER.dismountDespawn;
+    v.group.rotation.z = 0.16; // kicked over onto its side a bit
+  }
+
+  /**
+   * Drive the hijacked scooter: throttle/brake/steer, battery drain, world
+   * collision, and roadkill. Writes position/velocity into `player` (which
+   * must skip its own horizontal movement while riding). Returns nothing;
+   * `ridden` becomes null when the battery dies and strands the rider.
+   */
+  updateRidden(
+    dt: number,
+    input: { fwd: boolean; back: boolean; left: boolean; right: boolean },
+    player: { pos: Vec2; vel: THREE.Vector3 },
+    zombies: ZombieManager,
+  ): void {
+    const v = this.riddenV;
+    if (!v) return;
+    const throttle = (input.fwd ? 1 : 0) - (input.back ? 1 : 0);
+    const powered = v.battery > 0;
+    if (powered && throttle > 0) v.spd += SCOOTER.accel * dt;
+    else if (powered && throttle < 0) v.spd -= SCOOTER.accel * 1.3 * dt;
+    else v.spd *= Math.max(0, 1 - dt * 1.6); // coast / dead battery
+    v.spd = Math.max(-SCOOTER.reverseSpeed, Math.min(SCOOTER.maxSpeed, v.spd));
+
+    if (powered && throttle !== 0 && Math.abs(v.spd) > 0.2) {
+      v.battery -= dt * (0.35 + 0.65 * (Math.abs(v.spd) / SCOOTER.maxSpeed));
+      if (v.battery <= 0) {
+        v.battery = 0;
+        sfx.crash(); // the deck dies under you
+      }
+    }
+
+    // steering needs some speed to bite; reversed when driving backwards
+    const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    v.heading += steer * SCOOTER.steerRate * dt * Math.max(-1, Math.min(1, v.spd / 3));
+    const hx = Math.sin(v.heading), hz = Math.cos(v.heading);
+    v.freeX += hx * v.spd * dt;
+    v.freeZ += hz * v.spd * dt;
+    const p: Vec2 = { x: v.freeX, z: v.freeZ };
+    resolveCircleWorld(this.colliders, p, SCOOTER.radius);
+    v.freeX = p.x;
+    v.freeZ = p.z;
+    v.group.position.set(v.freeX, 0, v.freeZ);
+    v.group.rotation.y = v.heading;
+    v.group.rotation.z = -steer * Math.max(0, Math.min(1, v.spd / SCOOTER.maxSpeed)) * 0.22;
+
+    // the player rides along
+    player.pos.x = v.freeX;
+    player.pos.z = v.freeZ;
+    player.vel.x = hx * v.spd;
+    player.vel.z = hz * v.spd;
+
+    // roadkill: mow down the horde (kills route through the manager)
+    if (Math.abs(v.spd) > SCOOTER.roadkillMinSpeed) {
+      for (const z of zombies.active) {
+        if (z.state === 'dead' || z.hitFlash > 0) continue; // per-zombie re-hit guard
+        if (Math.hypot(z.pos.x - v.freeX, z.pos.z - v.freeZ) < SCOOTER.radius + ZOMBIE.radius + 0.25) {
+          zombies.damage(z, SCOOTER.roadkillDmg, hx * 7, hz * 7);
+          v.spd *= 0.9;
+        }
+      }
+    }
+
+    // out of battery: strand the rider, the husk is towed away
+    if (!powered && Math.abs(v.spd) < 0.4) {
+      this.riddenV = null;
+      v.vstate = 'dead';
+      v.despawnT = SCOOTER.deadDespawn;
+      v.group.rotation.z = 0.16;
+    }
+  }
+
+  /** Rider shot dead: the scooter coasts to a stop and waits to be hijacked. */
+  private dropScooter(v: Vehicle): void {
+    v.rider = null;
+    v.vstate = 'dropped';
+    v.despawnT = SCOOTER.dropDespawn;
+    v.spd = v.speed * 0.6;
+    v.group.rotation.z = 0.16;
+    sfx.bell(); // abandoned scooter chirps on the asphalt
+  }
+
+  /** Dropped/dead scooter: coast to a stop, blink near tow-away, remove. */
+  private updateIdleScooter(v: Vehicle, dt: number, index: number, player: { pos: Vec2 }): void {
+    if (v.vstate === 'ridden') return; // driven by updateRidden
+    if (v.vstate === 'dropped' && v.spd > 0.05) {
+      v.spd = Math.max(0, v.spd - dt * 3.2);
+      v.s += v.dir * v.spd * dt;
+      if (v.s > v.sMax) v.s = v.sMax;
+      else if (v.s < v.sMin) v.s = v.sMin;
+      const c = samplePath(v.path, v.s);
+      const hx = c.dx * v.dir, hz = c.dz * v.dir;
+      const rx = -hz, rz = hx;
+      v.group.position.set(c.x + rx * v.laneOff, 0, c.z + rz * v.laneOff);
+      v.group.rotation.y = Math.atan2(hx, hz);
+    }
+    this.setShadow(v, Math.hypot(v.group.position.x - player.pos.x, v.group.position.z - player.pos.z) < 34);
+    v.despawnT -= dt;
+    if (v.despawnT < 3) {
+      const mat = (v.group as THREE.Mesh).material as THREE.MeshStandardMaterial;
+      mat.transparent = true;
+      mat.opacity = Math.sin(v.t * 16) > 0 ? 0.9 : 0.25; // blink: tow truck coming
+    }
+    if (v.despawnT <= 0) this.removeVehicle(index);
+  }
+
+  private removeVehicle(i: number): void {
+    const v = this.vehicles[i];
+    this.root.remove(v.group);
+    const m = v.group as THREE.Mesh;
+    if (m.isMesh) m.geometry.dispose();
+    this.vehicles.splice(i, 1);
+  }
+
+  /** Keep the streets at a full fleet: towed scooters are replaced, with riders. */
+  private refillFleet(dt: number): void {
+    if (!this.zm || !this.scooterRoutes.length) return;
+    let n = 0;
+    for (const v of this.vehicles) if (v.kind === 'scooter' && v.vstate !== 'dead') n++;
+    if (n >= SCOOTER.fleet) return;
+    this.respawnCd -= dt;
+    if (this.respawnCd > 0) return;
+    this.respawnCd = SCOOTER.respawnCd;
+    // catch up quickly: up to 3 new scooters per tick
+    for (let k = 0; k < 3 && n + k < SCOOTER.fleet; k++) {
+      const route = this.scooterRoutes[Math.floor(Math.random() * this.scooterRoutes.length)];
+      const v = this.spawn('scooter', route, this.rng, 0);
+      if (v) this.attachRider(v);
+    }
+  }
+
+  /** Restart: clear all scooters (riders die with zombies.clearAll) and rebuild the fleet. */
+  reset(): void {
+    this.riddenV = null;
+    for (let i = this.vehicles.length - 1; i >= 0; i--) {
+      if (this.vehicles[i].kind === 'scooter') this.removeVehicle(i);
+    }
+    this.respawnCd = 0;
+    if (this.zm && this.scooterRoutes.length) {
+      for (let i = 0; i < SCOOTER.fleet; i++) {
+        const route = this.scooterRoutes[Math.floor(Math.random() * this.scooterRoutes.length)];
+        const v = this.spawn('scooter', route, this.rng, 0);
+        if (v) this.attachRider(v);
+      }
+    }
   }
 
   /**
@@ -301,9 +542,18 @@ export class Traffic {
     zombies: ZombieManager,
     onPlayerHit: (dmg: number, x: number, z: number, shake: number) => boolean,
   ): void {
-    for (const v of this.vehicles) {
+    for (let i = this.vehicles.length - 1; i >= 0; i--) {
+      const v = this.vehicles[i];
       const spec = SPEC[v.kind];
       v.t += dt;
+      v.hitCd = Math.max(0, v.hitCd - dt);
+      v.hornCd = Math.max(0, v.hornCd - dt);
+
+      if (v.kind === 'scooter' && v.vstate !== 'route') {
+        this.updateIdleScooter(v, dt, i, player);
+        continue;
+      }
+
       // scooters wobble and stop-and-go like real shared e-scooters
       let speed = v.speed;
       let lane = v.laneOff;
@@ -315,8 +565,6 @@ export class Traffic {
       v.s += v.dir * speed * dt;
       if (v.s > v.sMax) { v.s = v.sMax; v.dir = -1; }
       else if (v.s < v.sMin) { v.s = v.sMin; v.dir = 1; }
-      v.hitCd = Math.max(0, v.hitCd - dt);
-      v.hornCd = Math.max(0, v.hornCd - dt);
 
       // pose: centre on the path, offset to the RIGHT of travel direction
       const c = samplePath(v.path, v.s);
@@ -324,6 +572,21 @@ export class Traffic {
       const rx = -hz, rz = hx;
       v.group.position.set(c.x + rx * lane, 0, c.z + rz * lane);
       v.group.rotation.y = Math.atan2(hx, hz);
+
+      // zombie rider: welded to the deck, hooligan-grade traffic behaviour
+      if (v.kind === 'scooter') {
+        if (v.rider && v.rider.state === 'dead') {
+          this.dropScooter(v);
+          continue;
+        }
+        if (v.rider) {
+          v.anchor.x = v.group.position.x;
+          v.anchor.z = v.group.position.z;
+          v.anchor.heading = v.group.rotation.y;
+          v.rider.mesh.position.set(v.anchor.x, 0.18, v.anchor.z);
+          v.rider.mesh.rotation.y = v.anchor.heading;
+        }
+      }
 
       // shadow LOD: only vehicles near the player render into the shadow map
       this.setShadow(v, Math.hypot(v.group.position.x - player.pos.x, v.group.position.z - player.pos.z) < 34);
@@ -362,11 +625,14 @@ export class Traffic {
 
       // traffic mows down zombies (kills route through the manager: credit + drops)
       for (const z of zombies.active) {
-        if (z.state === 'dead') continue;
+        // riders ride: traffic never clips them (they dodge through it like the
+        // hooligans they are) — only gunfire, melee and player roadkill drop them
+        if (z.state === 'dead' || z.ride) continue;
         if (distPointSeg(z.pos.x, z.pos.z, ax, az, bx, bz) < spec.halfW + ZOMBIE.radius + 0.2) {
           zombies.damage(z, spec.zombieDmg, rx * 7 + hx * 2, rz * 7 + hz * 2);
         }
       }
     }
+    this.refillFleet(dt);
   }
 }

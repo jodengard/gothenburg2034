@@ -15,6 +15,16 @@ export type ZombieState =
 
 export type Role = 'pursuer' | 'flanker' | 'thrower' | 'interceptor' | 'swarm';
 
+/**
+ * Set while a zombie rides a vehicle (scooter hooligan): the vehicle owns the
+ * zombie's position; its AI is suspended until it rides no more (rider death).
+ */
+export interface RideAnchor {
+  x: number;
+  z: number;
+  heading: number;
+}
+
 export interface PlayerView {
   pos: Vec2;
   vel: THREE.Vector3;
@@ -45,6 +55,8 @@ export interface Zombie {
   unstickSide: number;
   targetObj: ThrowableObject | null;
   carrying: ThrowableObject | null;
+  /** Non-null while this zombie rides a vehicle (scooter hooligan). */
+  ride: RideAnchor | null;
   animT: number;
   fallDir: number;
   deadT: number;
@@ -168,7 +180,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, ride: null, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -193,6 +205,7 @@ export class ZombieManager {
     zom.unstickT = 0;
     zom.targetObj = null;
     zom.carrying = null;
+    zom.ride = null;
     zom.deadT = 0;
     zom.hitFlash = 0;
     zom.mesh.visible = true;
@@ -233,6 +246,10 @@ export class ZombieManager {
     z.state = 'dead';
     z.deadT = 0;
     z.fallDir = Math.random() < 0.5 ? 1 : -1;
+    if (z.ride) {
+      z.ride = null; // tumble off the vehicle; traffic notices and drops it
+      z.mesh.position.y = 0;
+    }
     if (z.carrying) {
       z.carrying.taken = false; // drop the object where it died
       z.carrying = null;
@@ -293,6 +310,16 @@ export class ZombieManager {
       // draw-call LOD: distant zombies render as fewer meshes
       this.lod(z, dist);
 
+      // riders stay welded to their vehicle every frame (AI is suspended,
+      // but the scooter keeps moving — no throttled lag on the mesh)
+      if (z.ride && z.state !== 'dead') {
+        z.pos.x = z.ride.x;
+        z.pos.z = z.ride.z;
+        z.facing = z.ride.heading;
+        z.mesh.position.set(z.pos.x, 0.18, z.pos.z);
+        z.mesh.rotation.set(0, z.facing, 0);
+      }
+
       // far-AI throttling
       const far = dist > PERF.farAiDist;
       z.aiAccum += dt;
@@ -345,6 +372,13 @@ export class ZombieManager {
       if (z.deadT > ZOMBIE.deathSinkDelay) {
         z.mesh.position.y = -(z.deadT - ZOMBIE.deathSinkDelay) * 1.4;
       }
+      return;
+    }
+
+    // --- riding a vehicle: it drives, this zombie just poses on it ---
+    if (z.ride) {
+      z.vel.x = 0;
+      z.vel.z = 0;
       return;
     }
 
@@ -683,7 +717,9 @@ export class ZombieManager {
     } else if (level === 1) {
       z.head.visible = true;
       z.armL.visible = z.armR.visible = false;
-      z.legL.visible = z.legR.visible = false;
+      // riders keep their legs: a legless torso hovering over a scooter reads
+      // as a bug, not as a hooligan, even from 40 m
+      z.legL.visible = z.legR.visible = z.ride === null ? false : true;
     } else {
       z.head.visible = false;
       z.armL.visible = z.armR.visible = false;

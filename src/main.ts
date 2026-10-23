@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -232,6 +232,10 @@ const zombies = new ZombieManager(scene, world.colliders, {
   },
 });
 
+// Every street scooter gets a zombie hooligan riding it (kill the rider,
+// hijack the scooter).
+traffic.attachZombies(zombies);
+
 const atmos = buildAtmosphere(scene, world, sunDir);
 const halloween = buildHalloween(scene, world, atmos.bonfirePos);
 
@@ -321,6 +325,24 @@ function grabPickup(): void {
   sfx.pickup();
 }
 
+// --- Scooter hijacking --------------------------------------------------------
+// E does double duty: mount/dismount a scooter takes priority over pickups.
+
+function scooterInteract(): boolean {
+  if (traffic.ridden) {
+    traffic.dismount();
+    sfx.bell();
+    return true;
+  }
+  const v = traffic.findMount(player.pos.x, player.pos.z);
+  if (v) {
+    traffic.mount(v);
+    sfx.bell();
+    return true;
+  }
+  return false;
+}
+
 // --- Combat -----------------------------------------------------------------
 let firing = false;
 let ads = false;
@@ -353,7 +375,7 @@ const touch = isTouchDevice()
         }
       },
       pickup() {
-        grabPickup();
+        if (!scooterInteract()) grabPickup();
       },
       pause() {
         if (state.phase === 'playing') pauseGame();
@@ -465,7 +487,9 @@ document.addEventListener('keydown', (e) => {
     if (state.phase === 'dead' && e.code === 'Enter') restart();
     return;
   }
-  if (e.code === 'KeyE') grabPickup();
+  if (e.code === 'KeyE') {
+    if (!scooterInteract()) grabPickup();
+  }
   if (e.code === 'KeyR') {
     weapons.startReload();
     const t = RELOAD_TIME[weapons.def.id];
@@ -575,6 +599,7 @@ function startGame(): void {
     weapons.reset();
     viewModel.setWeapon('bat');
     zombies.clearAll();
+    traffic.reset(); // rebuild the scooter fleet + riders (old riders died in clearAll)
     projectiles.clearAll();
     packs.reset();
     director.reset();
@@ -673,7 +698,8 @@ function frame(now: number): void {
     highway?.update(dt);
     atmos.update(dt);
     halloween.update(dt, zombies.active, camera.position);
-    hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
+    hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw,
+      traffic.ridden ? traffic.ridden.battery / SCOOTER.batterySeconds : -1);
     // safety net: some context losses never fire the event — catch them here
     if (!contextLost && renderer.getContext().isContextLost()) onContextLost();
     if (!contextLost) renderer.render(scene, camera);
@@ -700,6 +726,21 @@ function step(dt: number): void {
   touchJump = false;
   player.input.moveX = touch?.moveX ?? 0;
   player.input.moveY = touch?.moveY ?? 0;
+
+  // a hijacked scooter owns horizontal movement: W throttle, S brake/reverse,
+  // A/D steer (touch stick: push forward/back to throttle, strafe to steer)
+  player.riding = traffic.ridden !== null;
+  if (traffic.ridden) {
+    const tx = touch;
+    traffic.updateRidden(dt, {
+      fwd: keys.has('KeyW') || (tx ? tx.moveY < -0.25 : false),
+      back: keys.has('KeyS') || (tx ? tx.moveY > 0.45 : false),
+      left: keys.has('KeyA') || (tx ? tx.moveX < -0.3 : false),
+      right: keys.has('KeyD') || (tx ? tx.moveX > 0.3 : false),
+    }, player, zombies);
+    // battery may have died mid-frame, stranding the rider
+    player.riding = traffic.ridden !== null;
+  }
   player.update(dt);
 
   // threat
@@ -748,6 +789,10 @@ function step(dt: number): void {
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
   updatePickups(dt);
 
+  // scooter prompt overrides the weapon prompt (hijacking > pickups)
+  if (traffic.ridden) hud.showPrompt('E — Dismount');
+  else if (traffic.findMount(player.pos.x, player.pos.z)) hud.showPrompt('E — Hijack the scooter');
+
   // traffic: trams/buses/cars on real streets — hazards for the player, reapers for the horde
   traffic.update(dt, player, zombies, (dmg, x, z, shake) => {
     if (!player.damage(dmg, x, z)) return false;
@@ -785,7 +830,7 @@ requestAnimationFrame(frame);
 (window as unknown as Record<string, unknown>).__game = {
   state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
   renderer, camera, scene, hud, touch,
-  step, fireWeapon, restart,
+  step, fireWeapon, restart, scooterInteract,
   setFiring: (v: boolean) => { firing = v; },
   setKeys: (codes: string[]) => { keys.clear(); for (const c of codes) keys.add(c); },
 };

@@ -12,6 +12,9 @@ export class Hud {
     threat: $('hud-threat'),
     weapon: $('hud-weapon'),
     ammo: $('hud-ammo'),
+    battery: $('battery-wrap'),
+    batteryFill: $('battery-fill'),
+    batteryLabel: $('battery-label'),
     prompt: $('prompt'),
     vignette: $('vignette'),
     hitmark: $('hitmark'),
@@ -29,7 +32,11 @@ export class Hud {
   private hitmarkT = 0;
   private lastWeapon = '';
 
-  update(s: GameState, dt: number, fps: number, damageFlash: number, damageDir: number, yaw: number): void {
+  update(
+    s: GameState, dt: number, fps: number,
+    damageFlash: number, damageDir: number, yaw: number,
+    battery = -1, // 0..1 while riding a scooter, -1 to hide the bar
+  ): void {
     this.els.health.style.width = `${Math.max(0, s.health)}%`;
     this.els.hpwrap.style.borderColor = s.health < 30 ? '#ff4444' : '#ffffff55';
     const m = Math.floor(s.time / 60);
@@ -49,6 +56,18 @@ export class Hud {
       this.els.ammo.style.display = 'none';
     }
     this.els.fps.textContent = `${Math.round(fps)} fps`;
+
+    if (battery >= 0) {
+      this.els.battery.style.display = 'block';
+      this.els.batteryLabel.style.display = 'block';
+      this.els.batteryFill.style.width = `${Math.round(Math.max(0, battery) * 100)}%`;
+      this.els.batteryFill.style.background = battery < 0.25
+        ? 'linear-gradient(90deg,#8c2a1a,#ff5544)'
+        : 'linear-gradient(90deg,#b8952a,#ffd75e)';
+    } else {
+      this.els.battery.style.display = 'none';
+      this.els.batteryLabel.style.display = 'none';
+    }
 
     this.els.vignette.style.opacity = String(Math.min(0.85, damageFlash * 0.85));
     if (this.hitmarkT > 0) {

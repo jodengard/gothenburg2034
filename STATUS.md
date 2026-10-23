@@ -18,7 +18,49 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: L (dusk rebalance, moon-direction fix, autumn trees, Gårdsmotet highway, VOI scooters) — verified
+## Current milestone: M (zombie scooter riders — hijack, roadkill, battery, despawn) — verified
+
+### Added — hooligans on scooters (`zombie.ts` + `traffic.ts`)
+- Every street scooter now carries a **zombie rider**: a real pooled zombie linked to its
+  vehicle via a shared `RideAnchor` (pos + heading). While linked its AI is suspended —
+  the scooter drives, the zombie poses on the deck (welded to the deck every frame, so
+  no LOD-throttle lag on the mesh). It can still be shot/melee'd like any zombie.
+- Riders are **traffic-immune** (`z.ride` skipped in the vehicle-mow loop): without this,
+  cars on shared routes mowed the whole fleet within seconds of spawn (70 dmg vs 42 hp)
+  and the feature ate itself. Only gunfire, melee, explosions and player roadkill drop them.
+- **LOD keeps rider legs** at level 1: a legless torso hovering over a scooter read as a
+  bug in screenshots, not as a hooligan.
+
+### Added — hijack & drive (the "equip a scooter" flow)
+- **Kill the rider → the scooter drops**: coasts to a stop along its route, tilts onto its
+  kickstand, bell chirp, waits 30 s to be "towed away" (blinks the last 3 s).
+- **E (or the touch pickup button) near a dropped scooter = mount** — same key-press feel
+  as equipping a weapon; prompt "E — Hijack the scooter" overrides pickup prompts.
+- **Riding**: W throttle / S brake+reverse / A–D steer (touch stick: push = throttle,
+  strafe = steer). Top speed 9.5 m/s, lean into turns, camera rises 0.15 m onto the deck.
+  `Player.riding` hands horizontal movement to `Traffic.updateRidden` (which reuses the
+  world collision resolver with a 0.5 m radius); you keep aiming/shooting while driving.
+- **Roadkill**: above 2.5 m/s the deck mows zombies (60 dmg + knockback) through the
+  normal damage path — kill credit, blood fx, drops all work. `hitFlash` guards re-hits.
+- **Battery** (20 s full-throttle capacity, random 6–20 s when found): drains with speed,
+  HUD battery bar (yellow → red under 25%) while riding. At zero the deck dies under you
+  (crash sfx), you're stranded beside it and the husk is towed after 5 s.
+- **Despawn & refill**: dismounted scooters are towed after 12 s; the streets always refill
+  to the full fleet of 12 (up to 3 new rider-equipped scooters every 6 s). `traffic.reset()`
+  rebuilds the whole fleet + riders on restart (old riders die with `zombies.clearAll`).
+
+### Verification
+- 32/32 tests, tsc clean, build clean; 148 draw calls at spawn (riders reuse the zombie
+  LOD system; riders near the player are full meshes, distant ones collapse).
+- Browser lifecycle sim (hidden-tab `step()` driving): 12/12 riders anchored and stable
+  over 60 s (no traffic attrition after the immunity fix); kill→drop→prompt→mount→
+  throttle to 9.5 m/s→roadkill credited (+1 kill)→battery zero→stranded + `dead` state→
+  towed away→fleet refilled to 12/12; restart rebuilds 12 scooters with riders.
+- Screenshots: rider standing on the yellow deck (full LOD, from behind); first-person
+  riding view (deck at feet, road ahead); battery bar confirmed in DOM (`display:block`,
+  width tracks `battery/20`).
+
+## Previous milestone: L (dusk rebalance, moon-direction fix, autumn trees, Gårdsmotet highway, VOI scooters) — verified
 
 ### Fixed — the moon/sun was in the wrong direction
 - Compass azimuth 232° (SW) was fed straight into `setFromSphericalCoords`, but three.js theta

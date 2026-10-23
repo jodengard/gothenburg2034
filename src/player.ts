@@ -1,7 +1,7 @@
 /** First-person player controller: movement, look, collision, health. */
 import * as THREE from 'three';
 import { AABB, Vec2, resolveCircleWorld } from './collision';
-import { PLAYER } from './config';
+import { PLAYER, SCOOTER } from './config';
 import { state } from './state';
 
 export interface InputState {
@@ -27,6 +27,8 @@ export class Player {
   damageFlash = 0; // 0..1 HUD feedback
   lastDamageDir = 0; // yaw angle of last hit source
   input: InputState = { forward: false, back: false, left: false, right: false, sprint: false, jump: false, moveX: 0, moveY: 0 };
+  /** While true a hijacked scooter owns horizontal movement (Traffic drives it). */
+  riding = false;
   private recoilPitch = 0;
 
   constructor(private camera: THREE.PerspectiveCamera, private colliders: AABB[]) {}
@@ -38,6 +40,7 @@ export class Player {
     this.pitch = 0;
     this.recoilPitch = 0;
     this.onGround = true;
+    this.riding = false;
     this.health = PLAYER.maxHealth;
     this.immunity = 0;
     this.damageFlash = 0;
@@ -116,48 +119,59 @@ export class Player {
       }
     }
     const forwardAmt = Math.max(0, f);
-    state.sprinting = this.input.sprint && forwardAmt > 0.5;
+    state.sprinting = !this.riding && this.input.sprint && forwardAmt > 0.5;
     const speed = state.sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
 
-    const accel = this.onGround ? PLAYER.accel : PLAYER.airAccel;
-    if (wx !== 0 || wz !== 0) {
-      this.vel.x += wx * accel * dt;
-      this.vel.z += wz * accel * dt;
-    }
-    // friction / clamp horizontal speed
-    if (this.onGround) {
-      const hs = Math.hypot(this.vel.x, this.vel.z);
-      if (hs > 0) {
-        const drop = hs * Math.min(1, PLAYER.friction * dt);
-        const keep = (hs - drop) / hs;
-        this.vel.x *= keep;
-        this.vel.z *= keep;
+    if (!this.riding) {
+      const accel = this.onGround ? PLAYER.accel : PLAYER.airAccel;
+      if (wx !== 0 || wz !== 0) {
+        this.vel.x += wx * accel * dt;
+        this.vel.z += wz * accel * dt;
       }
-      const hs2 = Math.hypot(this.vel.x, this.vel.z);
-      if (hs2 > speed) {
-        const k = speed / hs2;
-        this.vel.x *= k;
-        this.vel.z *= k;
+      // friction / clamp horizontal speed
+      if (this.onGround) {
+        const hs = Math.hypot(this.vel.x, this.vel.z);
+        if (hs > 0) {
+          const drop = hs * Math.min(1, PLAYER.friction * dt);
+          const keep = (hs - drop) / hs;
+          this.vel.x *= keep;
+          this.vel.z *= keep;
+        }
+        const hs2 = Math.hypot(this.vel.x, this.vel.z);
+        if (hs2 > speed) {
+          const k = speed / hs2;
+          this.vel.x *= k;
+          this.vel.z *= k;
+        }
       }
     }
 
-    // jump & gravity
-    if (this.input.jump && this.onGround) {
-      this.vel.y = PLAYER.jumpSpeed;
-      this.onGround = false;
-    }
-    this.vel.y -= PLAYER.gravity * dt;
-    this.y += this.vel.y * dt;
-    if (this.y <= PLAYER.eyeHeight) {
-      this.y = PLAYER.eyeHeight;
+    // jump & gravity — riding means standing on the deck (fixed eye lift)
+    const eye = this.riding ? PLAYER.eyeHeight + SCOOTER.eyeLift : PLAYER.eyeHeight;
+    if (this.riding) {
+      this.y += (eye - this.y) * Math.min(1, dt * 6); // rise onto the deck
       this.vel.y = 0;
       this.onGround = true;
+    } else {
+      if (this.input.jump && this.onGround) {
+        this.vel.y = PLAYER.jumpSpeed;
+        this.onGround = false;
+      }
+      this.vel.y -= PLAYER.gravity * dt;
+      this.y += this.vel.y * dt;
+      if (this.y <= eye) {
+        this.y = eye;
+        this.vel.y = 0;
+        this.onGround = true;
+      }
     }
 
-    // integrate + collide
-    this.pos.x += this.vel.x * dt;
-    this.pos.z += this.vel.z * dt;
-    resolveCircleWorld(this.colliders, this.pos, PLAYER.radius);
+    // integrate + collide (while riding, Traffic owns the position)
+    if (!this.riding) {
+      this.pos.x += this.vel.x * dt;
+      this.pos.z += this.vel.z * dt;
+      resolveCircleWorld(this.colliders, this.pos, PLAYER.radius);
+    }
 
     // recoil decay
     this.recoilPitch *= Math.max(0, 1 - dt * 8);
