@@ -52,11 +52,14 @@ export interface Zombie {
   hitFlash: number;
   mesh: THREE.Group;
   bodyMesh: THREE.Mesh;
+  head: THREE.Mesh;
   armL: THREE.Group;
   armR: THREE.Group;
   legL: THREE.Mesh;
   legR: THREE.Mesh;
   bodyMat: THREE.MeshStandardMaterial;
+  /** Draw-call LOD bucket: 0 = full, 1 = no limbs, 2 = body only. */
+  lodLevel: number;
 }
 
 export interface ZombieEvents {
@@ -86,7 +89,7 @@ const FLASH = new THREE.MeshStandardMaterial({ color: 0xffdddd, emissive: 0x6611
 
 let nextId = 1;
 
-function buildMesh(): { mesh: THREE.Group; bodyMesh: THREE.Mesh; armL: THREE.Group; armR: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; bodyMat: THREE.MeshStandardMaterial } {
+function buildMesh(): { mesh: THREE.Group; bodyMesh: THREE.Mesh; head: THREE.Mesh; armL: THREE.Group; armR: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; bodyMat: THREE.MeshStandardMaterial } {
   const mesh = new THREE.Group();
   const bodyMat = CLOTHES[nextId % CLOTHES.length];
   const body = new THREE.Mesh(G.body, bodyMat);
@@ -108,7 +111,7 @@ function buildMesh(): { mesh: THREE.Group; bodyMesh: THREE.Mesh; armL: THREE.Gro
   const aL = mkArm(-1);
   const aR = mkArm(1);
   mesh.add(body, head, legL, legR, aL.g, aR.g);
-  return { mesh, bodyMesh: body, armL: aL.g, armR: aR.g, legL, legR, bodyMat };
+  return { mesh, bodyMesh: body, head, armL: aL.g, armR: aR.g, legL, legR, bodyMat };
 }
 
 // Math helpers ----------------------------------------------------------------
@@ -166,7 +169,7 @@ export class ZombieManager {
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
         targetObj: null, carrying: null, animT: 0, fallDir: 0, deadT: 0,
-        aiAccum: 0, hitFlash: 0, ...parts,
+        aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
     const hpScale = 1 + ZOMBIE.healthPerThreat * (threat - 1);
@@ -193,6 +196,10 @@ export class ZombieManager {
     zom.deadT = 0;
     zom.hitFlash = 0;
     zom.mesh.visible = true;
+    zom.head.visible = true;
+    zom.armL.visible = zom.armR.visible = true;
+    zom.legL.visible = zom.legR.visible = true;
+    zom.lodLevel = 0;
     zom.mesh.position.set(x, 0, z);
     zom.mesh.rotation.set(0, 0, 0);
     zom.mesh.scale.setScalar(1);
@@ -282,6 +289,9 @@ export class ZombieManager {
       const dx = z.pos.x - player.pos.x;
       const dz = z.pos.z - player.pos.z;
       const dist = Math.hypot(dx, dz);
+
+      // draw-call LOD: distant zombies render as fewer meshes
+      this.lod(z, dist);
 
       // far-AI throttling
       const far = dist > PERF.farAiDist;
@@ -655,6 +665,30 @@ export class ZombieManager {
     resolveCircleWorld(this.colliders, z.pos, ZOMBIE.radius);
     z.mesh.position.set(z.pos.x, z.mesh.position.y, z.pos.z);
     z.mesh.rotation.y = z.facing;
+  }
+
+  /**
+   * Draw-call LOD: a zombie is 6 meshes; at crowd counts that dominates the
+   * frame on phones. Beyond 25 m the limbs go, beyond 55 m only the torso
+   * remains — at that range they are a few pixels behind fog anyway.
+   */
+  private lod(z: Zombie, dist: number): void {
+    const level = dist < 25 ? 0 : dist < 55 ? 1 : 2;
+    if (z.lodLevel === level) return;
+    z.lodLevel = level;
+    if (level === 0) {
+      z.head.visible = true;
+      z.armL.visible = z.armR.visible = true;
+      z.legL.visible = z.legR.visible = true;
+    } else if (level === 1) {
+      z.head.visible = true;
+      z.armL.visible = z.armR.visible = false;
+      z.legL.visible = z.legR.visible = false;
+    } else {
+      z.head.visible = false;
+      z.armL.visible = z.armR.visible = false;
+      z.legL.visible = z.legR.visible = false;
+    }
   }
 
   private animate(z: Zombie, dt: number): void {

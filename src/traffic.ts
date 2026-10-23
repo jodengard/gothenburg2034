@@ -70,6 +70,7 @@ interface Vehicle {
   s: number; sMin: number; sMax: number;
   dir: number; speed: number; laneOff: number;
   hitCd: number; hornCd: number;
+  shadowOn: boolean;
 }
 
 const MAT = {
@@ -221,9 +222,16 @@ export class Traffic {
       kind, path, group, laneOff: spec.laneOff,
       speed: kind === 'car' ? rng.range(6.5, 9.5) : spec.speed,
       s: rng.range(sMin, sMax), sMin, sMax,
-      dir: rng.chance(0.5) ? 1 : -1, hitCd: 0, hornCd: 0,
+      dir: rng.chance(0.5) ? 1 : -1, hitCd: 0, hornCd: 0, shadowOn: true,
     });
     this.root.add(group);
+  }
+
+  /** Vehicles beyond this distance stop casting shadows (biggest mobile cost). */
+  private setShadow(v: Vehicle, on: boolean): void {
+    if (v.shadowOn === on) return;
+    v.shadowOn = on;
+    v.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = on; });
   }
 
   /**
@@ -251,6 +259,9 @@ export class Traffic {
       const rx = -hz, rz = hx;
       v.group.position.set(c.x + rx * v.laneOff, 0, c.z + rz * v.laneOff);
       v.group.rotation.y = Math.atan2(hx, hz);
+
+      // shadow LOD: only vehicles near the player render into the shadow map
+      this.setShadow(v, Math.hypot(v.group.position.x - player.pos.x, v.group.position.z - player.pos.z) < 34);
 
       // collision segment tail -> head (in world space, lane offset applied)
       const t0 = samplePath(v.path, v.s - spec.halfLen);

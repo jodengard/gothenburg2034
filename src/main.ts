@@ -4,6 +4,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { PLAYER, WEAPONS, WORLD } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
+import { buildLandmarks } from './landmarks';
 import { Traffic } from './traffic';
 import { Player } from './player';
 import { WeaponState, rollDrop, RELOAD_TIME } from './weapons';
@@ -186,6 +187,7 @@ window.addEventListener('resize', () => {
 
 // --- Systems ----------------------------------------------------------------
 const world: World = buildWorld(scene);
+const landmarks = buildLandmarks(scene);
 const traffic = new Traffic(scene, world);
 const fx = new Fx(scene);
 const hud = new Hud();
@@ -655,6 +657,7 @@ function frame(now: number): void {
     }
 
     fx.update(dt);
+    landmarks.update(dt);
     hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
     // safety net: some context losses never fire the event — catch them here
     if (!contextLost && renderer.getContext().isContextLost()) onContextLost();

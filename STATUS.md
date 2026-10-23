@@ -18,7 +18,38 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: I (mobile GPU profile + context-loss self-infliction fix) — verified
+## Current milestone: J (draw-call optimization + real Liseberg & Carlanderska landmarks) — verified
+
+### Added — landmarks outside the (invisible) boundary wall, at real OSM positions
+- `src/landmarks.ts`: **Liseberg** south of the towers — Lisebergshjulet Ferris wheel at
+  (74, 144) with slowly turning wheel + coloured gondolas, the 70 m AtmosFear drop tower,
+  the red **LISEBERG** entrance gate facing the hotels, six ride pavilions at their real
+  spots, Stora Scenen stage, ~90 park trees. **Carlanderska villan** on its hill at
+  (-427, 266) — ochre villa + tower on a grass dome, west-southwest past Berzeliigatan.
+- Positions verified against Overpass (probe scripts `tools/fetch-landmarks*.mjs`); the
+  park sits SE of the arena, the villa ~330 m beyond the SW corner.
+- Carlanderska renders **fog-free** (`fog: false`) so it reads as a permanent horizon
+  landmark despite being past the 300 m fog line; Liseberg fogs naturally (the wheel is
+  ~170 m from the hotel — clearly visible across the road, as in reality).
+- All scenery merged into ~10 draw calls (one vertex-coloured paint mesh + steel + hill +
+  2 instanced tree meshes + sign), no shadow casting.
+
+### Changed — draw-call / shadow-map diet (the mobile bottleneck was calls, not triangles)
+- Measured before: 266 draw calls, 195 shadow casters at 35 zombies (triangles only ~23 k).
+- Zombie LOD (`zombie.ts`): 6 meshes each; beyond 25 m limbs go, beyond 55 m only the
+  torso remains. Bucket switch only on level change; pooled resets restore parts.
+- Traffic shadow LOD (`traffic.ts`): vehicles beyond 34 m stop casting into the shadow
+  map (106 casters → ~12 near the player; a 1024 map can't show distant vehicle shadows).
+- After: **129 draw calls** at 30 zombies (was 266 at 35), shadow pass ~12 vehicle
+  casters + world. Landmarks add ~10 calls.
+
+### Verification
+- 32/32 tests, tsc clean, build clean. Browser: near zombie (12 m) keeps all parts
+  (lod 0), mid bucket (10 zombies) limbless (lod 1); traffic shadow meshes 12/106.
+- Screenshots: hotel plaza → Ferris wheel + LISEBERG gate across the field; south edge →
+  wheel/gate/AtmosFear close-up; west edge → Carlanderska hill crisp on the horizon.
+
+## Previous milestone: I (mobile GPU profile + context-loss self-infliction fix) — verified
 
 ### Changed — light graphics profile on phones (auto-detected via `pointer: coarse`, or `?low=1`)
 - MSAA off, pixel ratio capped at 1.5 (was 2), shadow map 1024 (was 2048) — cuts GPU
