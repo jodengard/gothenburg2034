@@ -18,7 +18,29 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: N (fatalities, headshots, rider eye alignment) — verified
+## Current milestone: O (scooter: fixed steering, third-person cam, Lisebergskanin player) — verified
+
+### Fixed — scooter steering was inverted
+- Forward is `(sin h, cos h)`, so **increasing** heading turns LEFT — the old
+  `heading += steer` made the right key steer left and vice versa. Now `heading -= steer`
+  (and the lean sign flipped with it, so the scooter still leans into the turn).
+  Verified: D → heading −1.2 rad, A → +1.2 rad, lean rotZ > 0 while turning right.
+
+### Added — third-person riding as the Lisebergskanin (`rabbit.ts` + `main.ts`)
+- While riding, the camera becomes a smoothed chase cam (3.4 m behind, 2.15 m up,
+  look-ahead at the road), the weapon viewmodel hides, `player.yaw` snaps to the scooter
+  heading (shots fly where you drive) and pitch is levelled.
+- The player **is a Lisebergskanin**: a procedural white rabbit — long swept-back ears
+  with pink insides, eyes, nose, paws on the handlebars, fluffy tail, long feet on the
+  deck — one merged vertex-coloured mesh (1 draw call), visible only while riding,
+  leaning with the scooter's turn tilt.
+- Verified in browser sim (16 assertions): kill rider→drop→mount→ride; steering both
+  ways + lean; camera behind & at height; rabbit on deck; viewmodel hidden; shots
+  forward; roadkill still credited; dismount restores first person + viewmodel.
+- Screenshots: chase-cam view of the rabbit driving past tram 57; front close-up of
+  the rabbit on the deck.
+
+## Previous milestone: N (fatalities, headshots, rider eye alignment) — verified
 
 ### Added — headshots (`zombie.ts` raycast + `main.ts` hitscan)
 - `ZombieManager.raycast` now returns a `head` flag: the ray must pass within

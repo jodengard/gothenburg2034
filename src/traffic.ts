@@ -416,9 +416,11 @@ export class Traffic {
       }
     }
 
-    // steering needs some speed to bite; reversed when driving backwards
+    // steering needs some speed to bite; reversed when driving backwards.
+    // forward is (sin h, cos h), so INCREASING heading turns LEFT — right key
+    // must decrease it.
     const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    v.heading += steer * SCOOTER.steerRate * dt * Math.max(-1, Math.min(1, v.spd / 3));
+    v.heading -= steer * SCOOTER.steerRate * dt * Math.max(-1, Math.min(1, v.spd / 3));
     const hx = Math.sin(v.heading), hz = Math.cos(v.heading);
     v.freeX += hx * v.spd * dt;
     v.freeZ += hz * v.spd * dt;
@@ -428,7 +430,7 @@ export class Traffic {
     v.freeZ = p.z;
     v.group.position.set(v.freeX, 0, v.freeZ);
     v.group.rotation.y = v.heading;
-    v.group.rotation.z = -steer * Math.max(0, Math.min(1, v.spd / SCOOTER.maxSpeed)) * 0.22;
+    v.group.rotation.z = steer * Math.max(0, Math.min(1, v.spd / SCOOTER.maxSpeed)) * 0.22;
 
     // the player rides along
     player.pos.x = v.freeX;

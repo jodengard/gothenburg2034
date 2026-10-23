@@ -22,6 +22,7 @@ import { initAudio, resumeAudio, sfx } from './audio';
 import { rng } from './rng';
 import { rayAABB } from './collision';
 import { TouchControls, isTouchDevice } from './touch';
+import { buildLisebergskanin } from './rabbit';
 
 // --- Menu bootstrap ----------------------------------------------------------
 // Registered before any heavy work so a click or keypress during world
@@ -203,6 +204,12 @@ const hud = new Hud();
 const player = new Player(camera, world.colliders);
 const weapons = new WeaponState();
 const viewModel = new ViewModel(camera);
+// While riding a scooter the player is a Lisebergskanin seen from a chase cam.
+const rabbit = buildLisebergskanin();
+rabbit.visible = false;
+scene.add(rabbit);
+const chaseCam = new THREE.Vector3();
+let wasRiding = false;
 const packs = new PackManager();
 const director = new Director();
 
@@ -752,6 +759,32 @@ function step(dt: number): void {
   }
   player.update(dt);
 
+  // Riding: third-person chase cam — the player is a Lisebergskanin on the deck.
+  if (player.riding && traffic.ridden) {
+    const v = traffic.ridden;
+    const hx = Math.sin(v.heading), hz = Math.cos(v.heading);
+    player.yaw = v.heading + Math.PI; // shots fly where the scooter points
+    player.pitch = 0;
+    rabbit.visible = true;
+    rabbit.position.set(v.freeX, 0.18, v.freeZ);
+    rabbit.rotation.set(0, v.heading, v.group.rotation.z); // lean with the scooter
+    const tx = v.freeX - hx * 3.4, tz = v.freeZ - hz * 3.4;
+    if (!wasRiding) {
+      chaseCam.set(tx, 2.15, tz);
+      wasRiding = true;
+    }
+    const k = Math.min(1, dt * 7);
+    chaseCam.x += (tx - chaseCam.x) * k;
+    chaseCam.y += (2.15 - chaseCam.y) * k;
+    chaseCam.z += (tz - chaseCam.z) * k;
+    camera.position.set(chaseCam.x, chaseCam.y, chaseCam.z);
+    camera.lookAt(v.freeX + hx * 1.8, 1.05, v.freeZ + hz * 1.8);
+  } else if (wasRiding || rabbit.visible) {
+    rabbit.visible = false;
+    wasRiding = false;
+  }
+  viewModel.group.visible = !player.riding;
+
   // threat
   state.threatLevel = director.level(state.time);
   state.highestThreat = Math.max(state.highestThreat, state.threatLevel);
@@ -838,7 +871,7 @@ requestAnimationFrame(frame);
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
   state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
-  renderer, camera, scene, hud, touch, fx, halloween,
+  renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
   setFiring: (v: boolean) => { firing = v; },
   setKeys: (codes: string[]) => { keys.clear(); for (const c of codes) keys.add(c); },
