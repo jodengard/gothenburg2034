@@ -1,0 +1,22 @@
+{
+  "name": "gothenburg-zombie-outbreak",
+  "version": "0.1.0",
+  "description": "Arcade first-person zombie survival shooter set in a low-poly Gothenburg.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Göteborg Zombie Outbreak — Survive Korsvägen</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; touch-action: none; overscroll-behavior: none; }
+    canvas { display: block; }
+
+    #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; }
+
+    /* crosshair */
+    #crosshair { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: #ffffffcc; border-radius: 50%; box-shadow: 0 0 3px #000; }
+    #hitmark { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: #ff4444; font-size: 26px; font-weight: bold; opacity: 0; text-shadow: 0 0 4px #000; }
+
+    /* bottom-left: health + weapon */
+    #bottom-left { position: absolute; left: 24px; bottom: 22px; }
+    #hp-wrap { width: 260px; height: 18px; border: 2px solid #ffffff55; background: #00000088; }
+    #hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#c22,#e55); transition: width 0.15s; }
+    #hud-weapon { color: #fff; margin-top: 6px; font-size: 17px; text-shadow: 0 1px 2px #000; }
+    #hud-ammo { color: #ffd75e; font-size: 22px; font-weight: bold; text-shadow: 0 1px 2px #000; }
+
+    /* top-left: time/kills/threat */
+    #top-left { position: absolute; top: 18px; left: 24px; color: #fff; text-shadow: 0 1px 2px #000; }
+    #hud-time { font-size: 30px; font-weight: bold; }
+    #hud-kills { font-size: 16px; margin-top: 2px; }
+    #hud-threat { font-size: 22px; color: #ffd75e; margin-top: 2px; letter-spacing: 2px; }
+
+    #hud-fps { position: absolute; top: 18px; right: 24px; color: #ffffff77; font-size: 12px; }
+
+    /* prompt */
+    #prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); color: #fff; background: #000000aa; padding: 8px 16px; border: 1px solid #ffffff44; font-size: 16px; display: none; }
+
+    /* damage feedback */
+    #vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(180,0,0,0.75) 100%); }
+    #dmgdir { position: absolute; left: 50%; top: 50%; opacity: 0; width: 0; height: 0; }
+    #dmgdir::before { content: '▲'; position: absolute; left: -10px; top: -120px; color: #ff2222; font-size: 26px; text-shadow: 0 0 6px #000; }
+
+    /* overlays */
+    .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(6,8,12,0.82); color: #eee; z-index: 10; }
+    .overlay h1 { font-size: 46px; margin-bottom: 8px; letter-spacing: 2px; }
+    .overlay h2 { font-size: 20px; font-weight: normal; color: #ffd75e; margin-bottom: 26px; }
+    .overlay .controls { font-size: 15px; line-height: 1.9; color: #bbb; text-align: center; margin-bottom: 30px; }
+    .overlay .controls b { color: #fff; }
+    .overlay .big { font-size: 64px; color: #ff4444; letter-spacing: 6px; margin-bottom: 18px; }
+    .overlay .stats { font-size: 20px; line-height: 2; text-align: center; margin-bottom: 26px; }
+    .overlay .stats span { color: #ffd75e; font-weight: bold; }
+    .overlay button { pointer-events: auto; font-size: 20px; padding: 12px 42px; background: #b3282d; color: #fff; border: none; cursor: pointer; letter-spacing: 1px; }
+    .overlay button:hover { background: #d33a40; }
+    #pause { display: none; }
+    #gameover { display: none; }
+    .flag { font-size: 15px; color: #6e88a8; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div id="crosshair"></div>
+    <div id="hitmark">✕</div>
+    <div id="top-left">
+      <div id="hud-time">0:00</div>
+      <div id="hud-kills">Kills: 0</div>
+      <div id="hud-threat">★☆☆☆☆</div>
+    </div>
+    <div id="hud-fps"></div>
+    <div id="bottom-left">
+      <div id="hp-wrap"><div id="hp-fill"></div></div>
+      <div id="hud-weapon">Baseball Bat</div>
+      <div id="hud-ammo"></div>
+    </div>
+    <div id="prompt"></div>
+    <div id="vignette"></div>
+    <div id="dmgdir"></div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <h1>GÖTEBORG ZOMBIE OUTBREAK</h1>
+    <h2>Survive Korsvägen. There is no exit.</h2>
+    <div class="controls">
+      <b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> look &nbsp;·&nbsp; <b>LMB</b> attack &nbsp;·&nbsp; <b>RMB</b> aim<br/>
+      <b>Shift</b> sprint &nbsp;·&nbsp; <b>Space</b> jump &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>E</b> pick up weapon<br/>
+      <b>Esc</b> pause &nbsp;·&nbsp; Kill zombies → loot their weapons → survive the swarm.
+    </div>
+    <button id="btn-start">CLICK TO START</button>
+    <div class="flag">🇸🇪 A low-poly tribute to Gothenburg</div>
+  </div>
+
+  <div id="pause" class="overlay">
+    <h1>PAUSED</h1>
+    <h2>The horde waits for no one.</h2>
+    <button id="btn-resume">RESUME</button>
+  </div>
+
+  <div id="gameover" class="overlay">
+    <div class="big">GAME OVER</div>
+    <div class="stats">
+      Survived <span id="go-time">0:00</span><br/>
+      Kills <span id="go-kills">0</span><br/>
+      Highest threat <span id="go-threat">★</span><br/>
+      Best time <span id="go-best">—</span>
+    </div>
+    <button id="btn-restart">RESTART [Enter]</button>
+  </div>
+
+  <script>
+    // Boot guard: shows startup/module-load failures on the menu instead of
+    // silently leaving the player stuck on the static HTML main menu.
+    (function () {
+      var shown = false;
+      window.__bootError = function (msg) {
+        if (shown) return;
+        shown = true;
+        var menu = document.getElementById('menu');
+        if (!menu) return;
+        menu.style.display = 'flex';
+        var err = document.getElementById('menu-error');
+        if (!err) {
+          err = document.createElement('div');
+          err.id = 'menu-error';
+          err.style.cssText = 'color:#ff7766;font-size:14px;max-width:76%;text-align:center;margin-top:20px;white-space:pre-wrap;line-height:1.6';
+          menu.appendChild(err);
+        }
+        err.textContent = 'Startup problem: ' + msg + '\nOpen the browser console (F12) for details.';
+      };
+      window.addEventListener('error', function (e) {
+        if (e.target && e.target.tagName === 'SCRIPT') window.__bootError('failed to load the game code (check your connection / the page path)');
+        else if (e.message) window.__bootError(e.message);
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        window.__bootError(String((r && r.message) || r || 'unknown error'));
+      });
+      setTimeout(function () {
+        if (!window.__game) window.__bootError('the game took too long to start (WebGL unsupported, or a script failed to load)');
+      }, 20000);
+    })();
+  </script>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
