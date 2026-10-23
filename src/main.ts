@@ -4,6 +4,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { PLAYER, WEAPONS, WORLD } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
+import { Traffic } from './traffic';
 import { Player } from './player';
 import { WeaponState, rollDrop, RELOAD_TIME } from './weapons';
 import { ViewModel } from './viewmodel';
@@ -155,6 +156,7 @@ window.addEventListener('resize', () => {
 
 // --- Systems ----------------------------------------------------------------
 const world: World = buildWorld(scene);
+const traffic = new Traffic(scene, world);
 const fx = new Fx(scene);
 const hud = new Hud();
 const player = new Player(camera, world.colliders);
@@ -534,6 +536,7 @@ function startGame(): void {
     director.reset();
     clearPickups();
     resetThrowables();
+    player.immunity = Math.max(player.immunity, 5); // grace: traffic spares you for the first seconds
     hud.hideOverlays();
     touch?.setVisible(true);
     lockPointer();
@@ -665,6 +668,14 @@ function step(dt: number): void {
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
   updatePickups(dt);
 
+  // traffic: trams/buses/cars on real streets — hazards for the player, reapers for the horde
+  traffic.update(dt, player, zombies, (dmg, x, z, shake) => {
+    if (!player.damage(dmg, x, z)) return false;
+    sfx.playerHurt();
+    fx.addShake(shake);
+    return true;
+  });
+
   // growls
   growlTimer -= dt;
   if (growlTimer <= 0) {
@@ -692,7 +703,7 @@ requestAnimationFrame(frame);
 
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
-  state, player, weapons, zombies, packs, director, world, pickups, projectiles,
+  state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
   renderer, camera, scene, hud, touch,
   step, fireWeapon, restart,
   setFiring: (v: boolean) => { firing = v; },

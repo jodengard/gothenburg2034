@@ -179,6 +179,18 @@ function pathLen(pts: Pt[]): number {
   return l;
 }
 
+/** Longest contiguous stretch of a polyline inside the arena box (|x|,|z| <= m). */
+function longestInside(pts: Pt[], m: number): Pt[] {
+  let bestRun: Pt[] = [];
+  let cur: Pt[] = [];
+  for (const p of pts) {
+    if (Math.abs(p.x) <= m && Math.abs(p.z) <= m) cur.push(p);
+    else { if (pathLen(cur) > pathLen(bestRun)) bestRun = cur; cur = []; }
+  }
+  if (pathLen(cur) > pathLen(bestRun)) bestRun = cur;
+  return bestRun;
+}
+
 /**
  * Greedily chain fragmented OSM polylines into longer routes by endpoint
  * proximity. OSM splits roads/rails at every junction; vehicles need
@@ -389,7 +401,7 @@ export function buildWorld(scene: THREE.Scene): World {
   for (const t of trams) {
     for (let i = 0; i < t.pts.length - 1; i++) {
       const p = t.pts[i];
-      const d = Math.hypot(p.x + 18, p.z - 44); // near the Korsvägen crossing
+      const d = Math.hypot(p.x + 66, p.z - 52); // near the Korsvägen crossing (re-centred coords)
       if (d < best) {
         best = d; stop = { x: p.x, z: p.z };
         const q = t.pts[i + 1];
@@ -672,27 +684,36 @@ export function buildWorld(scene: THREE.Scene): World {
   }
 
   // --- traffic routes (consumed by traffic.ts): real rails + arterial roads -------------------
+  // Routes are trimmed to the arena so vehicles never drive out through the
+  // invisible boundary walls onto the empty outskirts.
+  const IN = H - 8;
   // Tram lines 5 & 6: the two longest chained rail routes through the crossing.
-  const tramRoutes = chainPolys(trams.map((t) => t.pts), 6, 130)
+  const tramRoutes = chainPolys(trams.map((t) => longestInside(t.pts, IN)), 6, 130)
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 2);
   // Buses run on the arterials around the district (real routes 3 & 57 serve Korsvägen).
   const busNames = new Set(['Örgrytevägen', 'Skånegatan', 'Södra Vägen', 'Korsvägen', 'Eklandagatan']);
-  const busRoutes = chainPolys(roads.filter((r) => r.name && busNames.has(r.name)).map((r) => r.pts), 5, 150)
+  const busRoutes = chainPolys(roads.filter((r) => r.name && busNames.has(r.name)).map((r) => longestInside(r.pts, IN)), 8, 150)
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 3);
-  // Cars: a handful of distinct medium-length streets, spread over the arena.
-  const carRoutes: Pt[][] = [];
-  {
-    const carPool = roads.filter((r) =>
-      ['secondary', 'tertiary', 'unclassified', 'residential'].includes(r.highway) && pathLen(r.pts) >= 70);
-    const used = new Set<number>();
-    let guard = 0;
-    while (carRoutes.length < 8 && guard++ < 300 && carPool.length) {
-      const r = rng.pick(carPool);
-      if (used.has(r.id)) continue;
-      used.add(r.id);
-      carRoutes.push(r.pts);
-    }
-  }
+  // Cars: chain trimmed street segments (any road meeting another within 8 m —
+  // OSM way ends leave a gap at junctions) into realistic driving routes
+  // through the real grid; take the 6 longest. Service roads (alleys, garage
+  // and hotel access roads) count: the big-block core has few through-streets.
+  // Routes that hug a bus arterial are dropped so cars never drive through buses.
+  const busPts = busRoutes.flat();
+  const carRoutes = chainPolys(
+    roads
+      .filter((r) =>
+        ['secondary', 'tertiary', 'unclassified', 'residential', 'service'].includes(r.highway))
+      .map((r) => longestInside(r.pts, IN))
+      .filter((pts) => pts.length >= 2 && pathLen(pts) >= 20),
+    8, 60,
+  )
+    .filter((pts) => {
+      let near = 0;
+      for (const p of pts) if (busPts.some((b) => Math.hypot(p.x - b.x, p.z - b.z) < 3)) near++;
+      return near / pts.length < 0.3;
+    })
+    .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 6);
 
   // --- player start: on the street by the crossing, facing the towers -------------------------
   // Same physical spot as before, expressed in the re-centred arena coordinates.

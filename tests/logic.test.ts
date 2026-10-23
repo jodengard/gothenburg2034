@@ -8,6 +8,7 @@ import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, Pack } from '../src/pack';
 import { Zombie, PlayerView, Role } from '../src/zombie';
 import { World } from '../src/world';
+import { makePath, samplePath, distPointSeg } from '../src/traffic';
 import { THREAT } from '../src/config';
 
 // --- RNG ---------------------------------------------------------------------
@@ -230,5 +231,29 @@ describe('pack roles', () => {
     const player: PlayerView = { ...fakePlayer, vel: new THREE.Vector3(8, 0, 0) };
     const roles = computeRoles(pack, { player, threat: 2, throwablesAvailable: false });
     expect(roles).toContain('interceptor');
+  });
+});
+
+// --- Traffic path math ---------------------------------------------------------
+describe('traffic paths', () => {
+  it('makePath computes cumulative length', () => {
+    const p = makePath([{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 10 }]);
+    expect(p.total).toBeCloseTo(20);
+  });
+  it('samplePath interpolates position, tangent and clamps', () => {
+    const p = makePath([{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 10 }]);
+    const a = samplePath(p, 5);
+    expect(a.x).toBeCloseTo(5); expect(a.z).toBeCloseTo(0);
+    expect(a.dx).toBeCloseTo(1); expect(a.dz).toBeCloseTo(0);
+    const b = samplePath(p, 15);
+    expect(b.x).toBeCloseTo(10); expect(b.z).toBeCloseTo(5);
+    expect(b.dx).toBeCloseTo(0); expect(b.dz).toBeCloseTo(1);
+    const c = samplePath(p, 999); // clamped to the end
+    expect(c.x).toBeCloseTo(10); expect(c.z).toBeCloseTo(10);
+  });
+  it('distPointSeg measures to the segment, not the infinite line', () => {
+    expect(distPointSeg(5, 5, 0, 0, 10, 0)).toBeCloseTo(5);
+    expect(distPointSeg(15, 3, 0, 0, 10, 0)).toBeCloseTo(Math.hypot(5, 3)); // past the end -> to endpoint
+    expect(distPointSeg(-4, 3, 0, 0, 10, 0)).toBeCloseTo(5); // before the start
   });
 });

@@ -12,13 +12,56 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 29 unit tests (pure logic + headless zombie sim)
+npm test         # 32 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 ```
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: G (menu hardening, mobile controls, hot level 1, Pages-ready) — verified
+## Current milestone: H (mobile WebGL hardening, arena shrink, live traffic) — verified
+
+### Fixed — mobile Chrome: reload error + white first play (Pixel 10 report)
+- **Reload → "Error creating WebGL context"**: Android Chrome releases the previous page's GPU
+  context asynchronously and reclaims contexts from background tabs (acute with many tabs open),
+  so creation fails *transiently* right after a reload. Renderer creation now retries 4× with
+  short waits, and the fatal message tells the player to close tabs if it still fails.
+- **First play → white screen**: the game loop ran fine but Chrome had silently reclaimed the
+  WebGL context (backgrounded/prerendered tab); the game rendered to a dead canvas. Added a
+  `webglcontextlost` handler: preventDefault, stop rendering, show a *"Graphics were
+  interrupted — close tabs, TAP TO RELOAD"* overlay; `webglcontextrestored` reloads.
+- **Pointer-lock toast on mobile** ("To show your cursor…"): `requestPointerLock` is now skipped
+  entirely on touch devices — drag-look doesn't need it.
+
+### Changed — arena shrunk & re-centered (260×260 m, was 370)
+- `WORLD.centerX/centerZ = (48, −8)`: re-centered on the district core between the Korsvägen
+  crossing and Tower 3, so both stay inside the tighter map; all mapdata shifted at load.
+- Fog tightened to 60/300; player start moved with the shift (−49, 82); tram-stop anchor
+  updated to the re-centered crossing. Verified: 30-zombie level-1 cap still reached, no NaN.
+
+### Added — moving traffic as hazards (`src/traffic.ts`)
+- **Routes from real OSM geometry**: fragmented ways are chained endpoint-to-endpoint
+  (`chainPolys` in world.ts) and trimmed to the arena (`longestInside`). Tram lines **5 & 6** run
+  on the real rails (two chained routes, 277 m + 241 m); buses **3 & 57** on named arterials
+  (Örgrytevägen/Skånegatan/…); **6 cars** on chained secondary→service streets. Car routes are
+  geometrically deduped against bus routes so cars never drive through buses.
+- **Vehicles**: two-car blue M28-style trams with lit "5"/"6" line boards + pantograph, Älvsbuss
+  blue buses with "3"/"57" boards, sedans in 8 paint colors with head/tail lights. All
+  ping-pong along their route, offset to the **right** of travel (Swedish right-hand traffic);
+  trams stay on the rails (lane offset 0).
+- **Hazards**: tram 85 dmg / bus 45 / car 28 to the player + sideways knockback + screen shake
+  + crash sound, 1.4 s per-vehicle cooldown, 5 s spawn grace; trams & buses honk when you're in
+  front of them (<16 m). Trams mow down zombies outright (1000 dmg), buses 150, cars 70 — kills
+  route through `ZombieManager.damage`, so kill credit and weapon drops work as with gunfire.
+- Verified headless: 10 vehicles, 0 boundary escapes over 30 s, tram dealt 85 dmg standing on
+  the tracks, tram killed a spawned zombie (kill credited), worst step 1.4 ms @ 30 zombies.
+- Visual: street-level shots of tram 5 at the tram stop, bus 3 on the arterial, cars in the
+  right lane by the tower wall; bird's-eye shows both trams on the rails across the crossing.
+
+### Tests
+- 32/32 (new: `makePath` cumulative length, `samplePath` position/tangent/clamp,
+  `distPointSeg` segment-vs-line). `tsc --noEmit` clean, `vite build` clean.
+
+## Previous milestone: G (menu hardening, mobile controls, hot level 1, Pages-ready) — verified
 
 ### Fixed — "can't get past the main menu"
 - **Pointer-lock trap removed**: the old `pointerlockchange` handler paused the game on *any*

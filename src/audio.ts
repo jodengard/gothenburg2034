@@ -100,6 +100,18 @@ export const sfx = {
     playTone(220, 0.2, 0.3, 'square', -120);
     playNoise(0.15, 500, 1.0, 0.3);
   },
+  horn(kind: 'tram' | 'car'): void {
+    if (kind === 'tram') {
+      playTone(311, 0.55, 0.22, 'square');
+      playTone(415, 0.55, 0.18, 'square');
+    } else {
+      playTone(220, 0.22, 0.16, 'sawtooth');
+    }
+  },
+  crash(): void {
+    playNoise(0.35, 700, 0.5, 0.55);
+    playTone(70, 0.3, 0.45, 'square', -30);
+  },
   pickup(): void {
     playTone(660, 0.08, 0.2, 'square');
     playTone(990, 0.12, 0.2, 'square');
