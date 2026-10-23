@@ -341,7 +341,7 @@ export function buildWorld(scene: THREE.Scene): World {
     concrete: new THREE.MeshStandardMaterial({ color: 0xa7a49c, roughness: 0.95 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x9fc0cc, roughness: 0.22, metalness: 0.35, transparent: true, opacity: 0.85 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1, flatShading: true }),
-    leaf: new THREE.MeshStandardMaterial({ color: 0x4c6b3a, roughness: 1, flatShading: true }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }), // autumn tints via instanceColor
   };
 
   const facadeDefs: [string, string][] = [
@@ -353,7 +353,7 @@ export function buildWorld(scene: THREE.Scene): World {
     map.repeat.set(1 / 7, 1 / 7);
     glow.repeat.set(1 / 7, 1 / 7);
     return new THREE.MeshStandardMaterial({
-      map, roughness: 0.9, emissive: 0xffb46a, emissiveMap: glow, emissiveIntensity: 1.4,
+      map, roughness: 0.9, emissive: 0xffb46a, emissiveMap: glow, emissiveIntensity: 0.95,
     });
   });
   const { map: gTex, glow: gGlow } = glassTex();
@@ -361,7 +361,7 @@ export function buildWorld(scene: THREE.Scene): World {
   gGlow.repeat.set(1 / 3.6, 1 / 3.6);
   const towerMat = new THREE.MeshStandardMaterial({
     map: gTex, color: 0xbcd4dc, metalness: 0.85, roughness: 0.16, envMapIntensity: 1.5,
-    emissive: 0xffc078, emissiveMap: gGlow, emissiveIntensity: 1.1,
+    emissive: 0xffc078, emissiveMap: gGlow, emissiveIntensity: 0.8,
   });
 
   // --- ground + parks ------------------------------------------------------------
@@ -536,14 +536,19 @@ export function buildWorld(scene: THREE.Scene): World {
   const leaves = new THREE.InstancedMesh(leafGeo, M.leaf, treePts.length);
   trunks.castShadow = leaves.castShadow = true;
   const mtx = new THREE.Matrix4();
+  const leafCol = new THREE.Color();
+  const AUTUMN = [0xd97a2b, 0xc0392b, 0xe0b53c, 0x9a5a1f, 0x6b7a3a, 0xb4622a];
   treePts.forEach((t, i) => {
     const s = rng.range(1.7, 2.9);
     mtx.makeScale(1, rng.range(0.8, 1.2), 1).setPosition(t.x, 1.7, t.z);
     trunks.setMatrixAt(i, mtx);
     mtx.makeScale(s, s * rng.range(0.75, 1.1), s).setPosition(t.x, 3.4 + s * 0.45, t.z);
     leaves.setMatrixAt(i, mtx);
+    leafCol.setHex(AUTUMN[Math.floor(rng.range(0, AUTUMN.length))]);
+    leaves.setColorAt(i, leafCol);
     colliders.push(makeAABB(t.x, t.z, 0.7, 0.7, 3));
   });
+  if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
   root.add(trunks, leaves);
 
   // --- streetlights along real streets -------------------------------------------------

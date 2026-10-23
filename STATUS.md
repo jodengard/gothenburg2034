@@ -18,7 +18,50 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: K (Halloween night: moon, mist, lit windows, jack-o'-lanterns, glowing eyes) — verified
+## Current milestone: L (dusk rebalance, moon-direction fix, autumn trees, Gårdsmotet highway, VOI scooters) — verified
+
+### Fixed — the moon/sun was in the wrong direction
+- Compass azimuth 232° (SW) was fed straight into `setFromSphericalCoords`, but three.js theta
+  runs from +Z(=south) toward +X(=east): the correct mapping is `theta = 180° - azimuth`.
+  The night build's "SW" moon actually rose in the **NW**. Fixed in `main.ts`; the moon,
+  the key light and the sky afterglow now all sit over the SW — behind Carlanderska's hill.
+
+### Changed — night → dusk (it was too dark)
+- Sky: sun at **+1° elevation** SW (just above the horizon), rayleigh 2.0, turbidity 8 —
+  twilight-blue dome with a bright orange afterglow band instead of a black night dome.
+- Key light `0xffa268` @1.9 (was cold moonlight 0.95), hemi `0x7688b4/0x33291c` @1.05,
+  exposure 1.12→1.32. Fog: `0x4d5573`, near 32, far 255; grass `0x2f3322`.
+- Stars fade to opacity 0.22 (dusk washes them out); mist tinted warm mauve; window
+  emissives dialled down (1.4→0.95, 1.1→0.8) since ambient light is back.
+
+### Added — autumn foliage
+- Liseberg park trees + arena trees now use per-instance `setColorAt` from an autumn
+  palette (orange/red/yellow/brown/olive) over a white leaf material — late-October
+  Gothenburg. No extra draw calls.
+
+### Added — the E6 at Gårdsmotet (`src/highway.ts` + `tools/fetch-highway.mjs`, 2 draw calls)
+- New Overpass pull (r=1600 m, motorway/trunk/links) stored as `mapdata.motorways`: the
+  E6/Lundbyleden mainline + Gårdsmotet ramp cluster sit ~230 m **east** of the arena —
+  outside the solid boundary, so it's horizon scenery like Carlanderska.
+- Fog-free asphalt ribbon (clipped to a 520 m radius so nothing floats past the ground
+  plane) + **64 flowing head/tail-lights** (one additive Points draw call, white one way,
+  red the other) — the motorway reads as a live stream of light on the dusk horizon.
+
+### Added — VOI e-scooters (`traffic.ts` + `sfx.bell`)
+- New vehicle kind `scooter`: 12 VOI-yellow scooters on the car routes — they **weave**
+  (±0.5–1 m lateral sine), **stop and go** randomly, ding an annoying bell within 9 m,
+  bump the player for 8 dmg (tiny knockback) and still mow zombies (20 dmg).
+- Each scooter is ONE merged vertex-coloured mesh (12 draw calls instead of ~70).
+
+### Verification
+- 32/32 tests, tsc clean, build clean. Draw calls 176 at spawn with 12 scooters + highway
+  (scooters as separate-part groups measured 301 — the merge saved ~125).
+- Screenshots: NE spawn under a lit tower with twilight sky; SW afterglow with the moon
+  behind Carlanderska + bonfire/pumpkins; E horizon with the Gårdsmotet light-stream;
+  Liseberg wheel + AtmosFear framed by autumn trees; VOI scooter close-up (yellow stem,
+  deck, handlebar); star zoom confirming no sprite artifacts.
+
+## Previous milestone: K (Halloween night: moon, mist, lit windows, jack-o'-lanterns, glowing eyes) — verified
 
 ### Added — night + Halloween atmosphere (`src/atmos.ts`, ~8 draw calls)
 - **Harvest moon**: big low orange moon (canvas texture with halo + craters, additive,

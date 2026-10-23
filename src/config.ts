@@ -165,13 +165,14 @@ export const WORLD = {
   centerX: 48,
   centerZ: -8,
   halfSize: 130,
-  // Halloween night: low, dense, blue-black mist — the horizon dissolves and
-  // the Liseberg wheel looms out of it; Carlanderska stays fog-free.
-  fogNear: 28,
-  fogFar: 235,
-  skyColor: 0x2a3550,
-  fogColor: 0x161d2c,
-  groundColor: 0x1c2418,
+  // Dusk: a lighter mauve-twilight haze so the horizon reads as fading daylight
+  // instead of pitch black; the Liseberg wheel still looms out of it and
+  // Carlanderska stays fog-free.
+  fogNear: 32,
+  fogFar: 255,
+  skyColor: 0x4a5578,
+  fogColor: 0x4d5573,
+  groundColor: 0x2f3322,
 };
 
 export const PERF = {

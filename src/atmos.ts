@@ -104,7 +104,7 @@ export function buildAtmosphere(scene: THREE.Scene, world: World, moonDir: THREE
   starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
     color: 0xc8d6ff, size: 2.4, sizeAttenuation: false,
-    transparent: true, opacity: 0.8, depthWrite: false, fog: false,
+    transparent: true, opacity: 0.22, depthWrite: false, fog: false,
   }));
   root.add(stars);
 
@@ -116,7 +116,7 @@ export function buildAtmosphere(scene: THREE.Scene, world: World, moonDir: THREE
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(3, 3);
     const m = new THREE.Mesh(mistGeo, new THREE.MeshBasicMaterial({
-      map: t, color: 0x9db0d0, transparent: true, opacity: 0.16 - i * 0.04,
+      map: t, color: 0xb6a4b4, transparent: true, opacity: 0.15 - i * 0.035,
       depthWrite: false, side: THREE.DoubleSide,
     }));
     m.rotation.x = -Math.PI / 2;

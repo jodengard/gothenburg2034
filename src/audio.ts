@@ -108,6 +108,11 @@ export const sfx = {
       playTone(220, 0.22, 0.16, 'sawtooth');
     }
   },
+  bell(): void {
+    // annoying e-scooter "get out of the way" ding
+    playTone(1750, 0.09, 0.14, 'triangle');
+    playTone(2340, 0.12, 0.1, 'triangle');
+  },
   crash(): void {
     playNoise(0.35, 700, 0.5, 0.55);
     playTone(70, 0.3, 0.45, 'square', -30);

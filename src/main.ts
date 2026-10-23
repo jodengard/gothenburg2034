@@ -5,6 +5,7 @@ import { PLAYER, WEAPONS, WORLD } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
+import { buildHighway } from './highway';
 import { buildAtmosphere } from './atmos';
 import { buildHalloween } from './halloween';
 import { Traffic } from './traffic';
@@ -132,7 +133,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.32;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -145,17 +146,21 @@ const sky = new Sky();
 sky.scale.setScalar(20000);
 const sunDir = new THREE.Vector3();
 {
-  const elevation = 14, azimuth = 232; // harvest moon low over the SW
+  // Dusk: the afterglow and the harvest moon sit low over the SW. Compass
+  // azimuth 232° maps to spherical theta = 180° - 232° = -52° in three.js
+  // (theta runs from +Z=south toward +X=east), which lands the light out west.
+  const elevation = 14, azimuth = 232;
   const phi = THREE.MathUtils.degToRad(90 - elevation);
-  const theta = THREE.MathUtils.degToRad(azimuth);
+  const theta = THREE.MathUtils.degToRad(180 - azimuth);
   sunDir.setFromSphericalCoords(1, phi, theta);
   const u = sky.material.uniforms;
-  u['turbidity'].value = 10;
-  u['rayleigh'].value = 1.1;
-  u['mieCoefficient'].value = 0.004;
-  u['mieDirectionalG'].value = 0.9;
-  // Sun BELOW the horizon: the Preetham shader then renders a deep night dome.
-  u['sunPosition'].value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 + 7), theta);
+  u['turbidity'].value = 8;
+  u['rayleigh'].value = 2.0; // strong red-orange scattering band at the horizon
+  u['mieCoefficient'].value = 0.006;
+  u['mieDirectionalG'].value = 0.86;
+  // Sun just ABOVE the horizon: the dome keeps a twilight blue wash with a
+  // bright SW afterglow band (at -5° everything except the glow stays black).
+  u['sunPosition'].value.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 1), theta);
 }
 scene.add(sky);
 {
@@ -167,7 +172,7 @@ scene.add(sky);
   pmrem.dispose();
 }
 
-const sun = new THREE.DirectionalLight(0x93aedd, 0.95); // cold moonlight
+const sun = new THREE.DirectionalLight(0xffa268, 1.9); // warm dusk key from the SW
 sun.castShadow = true;
 sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
 sun.shadow.camera.near = 20;
@@ -179,7 +184,7 @@ sun.shadow.camera.bottom = -110;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.6;
 scene.add(sun, sun.target);
-const hemi = new THREE.HemisphereLight(0x33456e, 0x0c1008, 0.62);
+const hemi = new THREE.HemisphereLight(0x7688b4, 0x33291c, 1.05); // twilight fill
 scene.add(hemi);
 
 window.addEventListener('resize', () => {
@@ -191,6 +196,7 @@ window.addEventListener('resize', () => {
 // --- Systems ----------------------------------------------------------------
 const world: World = buildWorld(scene);
 const landmarks = buildLandmarks(scene);
+const highway = buildHighway(scene);
 const traffic = new Traffic(scene, world);
 const fx = new Fx(scene);
 const hud = new Hud();
@@ -664,6 +670,7 @@ function frame(now: number): void {
 
     fx.update(dt);
     landmarks.update(dt);
+    highway?.update(dt);
     atmos.update(dt);
     halloween.update(dt, zombies.active, camera.position);
     hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);

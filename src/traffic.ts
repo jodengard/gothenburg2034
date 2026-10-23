@@ -9,6 +9,7 @@
  * exactly like gunfire kills.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Vec2 } from './collision';
 import { PLAYER, ZOMBIE } from './config';
 import { RNG } from './rng';
@@ -54,7 +55,7 @@ export function distPointSeg(
 
 // --- vehicles -----------------------------------------------------------------
 
-type Kind = 'tram' | 'bus' | 'car';
+type Kind = 'tram' | 'bus' | 'car' | 'scooter';
 
 const SPEC: Record<Kind, {
   speed: number; halfLen: number; halfW: number; laneOff: number;
@@ -63,14 +64,19 @@ const SPEC: Record<Kind, {
   tram: { speed: 8.5, halfLen: 11.8, halfW: 1.35, laneOff: 0, playerDmg: 85, zombieDmg: 1000, shake: 0.9 },
   bus:  { speed: 7.0, halfLen: 6.2,  halfW: 1.3,  laneOff: 2.6, playerDmg: 45, zombieDmg: 150, shake: 0.6 },
   car:  { speed: 8.0, halfLen: 2.3,  halfW: 0.95, laneOff: 2.0, playerDmg: 28, zombieDmg: 70,  shake: 0.45 },
+  // VOI e-scooters: everywhere in Gothenburg, weaving along the curb, ding-ing
+  // at you. More irritating than dangerous.
+  scooter: { speed: 5.2, halfLen: 0.7, halfW: 0.35, laneOff: 3.1, playerDmg: 8, zombieDmg: 20, shake: 0.18 },
 };
 
 interface Vehicle {
-  kind: Kind; path: Path; group: THREE.Group;
+  kind: Kind; path: Path; group: THREE.Object3D;
   s: number; sMin: number; sMax: number;
   dir: number; speed: number; laneOff: number;
   hitCd: number; hornCd: number;
   shadowOn: boolean;
+  /** scooter weave: elapsed time, per-vehicle phase, lateral wobble amplitude */
+  t: number; phase: number; swerveAmp: number;
 }
 
 const MAT = {
@@ -172,6 +178,45 @@ function buildCar(rng: RNG): THREE.Group {
   return g;
 }
 
+/** Bake a flat colour into vertex colours so parts can merge into one mesh. */
+function tinted(geo: THREE.BufferGeometry, color: number): THREE.BufferGeometry {
+  const c = new THREE.Color(color);
+  const n = geo.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+/**
+ * VOI e-scooter: yellow stem + deck accents, tiny wheels, front = +Z.
+ * Merged into ONE vertex-coloured mesh — 12 of these swarm the streets and
+ * separate parts would cost ~70 draw calls on mobile.
+ */
+function buildScooter(): THREE.Mesh {
+  const wheel = new THREE.CylinderGeometry(0.13, 0.13, 0.07, 10);
+  wheel.rotateZ(Math.PI / 2);
+  const parts: THREE.BufferGeometry[] = [];
+  for (const z of [0.42, -0.42]) {
+    const w = wheel.clone().translate(0, 0.13, z);
+    parts.push(tinted(w, 0x101113));
+  }
+  parts.push(tinted(new THREE.BoxGeometry(0.2, 0.05, 0.72).translate(0, 0.2, -0.05), 0x1b1b1d)); // deck
+  parts.push(tinted(new THREE.BoxGeometry(0.14, 0.03, 0.34).translate(0, 0.245, -0.05), 0xffcf00)); // grip pad
+  const stem = new THREE.BoxGeometry(0.06, 1.02, 0.06);
+  stem.rotateX(-0.14);
+  stem.translate(0, 0.72, 0.4);
+  parts.push(tinted(stem, 0xffcf00));
+  parts.push(tinted(new THREE.BoxGeometry(0.46, 0.05, 0.05).translate(0, 1.2, 0.47), 0x1b1b1d)); // handlebar
+  parts.push(tinted(new THREE.BoxGeometry(0.1, 0.06, 0.05).translate(0, 0.32, -0.47), 0xff5030)); // reflector
+  const mesh = new THREE.Mesh(
+    mergeGeometries(parts, false)!,
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.25 }),
+  );
+  mesh.castShadow = false;
+  return mesh;
+}
+
 // --- manager --------------------------------------------------------------------
 
 export class Traffic {
@@ -207,6 +252,11 @@ export class Traffic {
         this.spawn('car', pts, rng, 0);
       }
     });
+    // VOI scooters: a couple on every car route (capped) — they are everywhere
+    const scooterRoutes = world.carRoutes.length ? world.carRoutes : world.busRoutes;
+    for (let i = 0; scooterRoutes.length && i < 12; i++) {
+      this.spawn('scooter', scooterRoutes[i % scooterRoutes.length], rng, 0);
+    }
   }
 
   private spawn(kind: Kind, pts: Vec2[], rng: RNG, line: number, range?: [number, number]): void {
@@ -217,12 +267,18 @@ export class Traffic {
     const sMin = range ? range[0] : spec.halfLen + 4;
     const sMax = range ? range[1] : path.total - spec.halfLen - 4;
     if (sMax - sMin < 10) return;
-    const group = kind === 'tram' ? buildTram(line) : kind === 'bus' ? buildBus(line) : buildCar(rng);
+    const group = kind === 'tram' ? buildTram(line)
+      : kind === 'bus' ? buildBus(line)
+      : kind === 'scooter' ? buildScooter()
+      : buildCar(rng);
     this.vehicles.push({
       kind, path, group, laneOff: spec.laneOff,
-      speed: kind === 'car' ? rng.range(6.5, 9.5) : spec.speed,
+      speed: kind === 'car' || kind === 'scooter'
+        ? (kind === 'car' ? rng.range(6.5, 9.5) : rng.range(3.8, 6.8))
+        : spec.speed,
       s: rng.range(sMin, sMax), sMin, sMax,
       dir: rng.chance(0.5) ? 1 : -1, hitCd: 0, hornCd: 0, shadowOn: true,
+      t: 0, phase: rng.range(0, Math.PI * 2), swerveAmp: kind === 'scooter' ? rng.range(0.5, 1.0) : 0,
     });
     this.root.add(group);
   }
@@ -247,7 +303,16 @@ export class Traffic {
   ): void {
     for (const v of this.vehicles) {
       const spec = SPEC[v.kind];
-      v.s += v.dir * v.speed * dt;
+      v.t += dt;
+      // scooters wobble and stop-and-go like real shared e-scooters
+      let speed = v.speed;
+      let lane = v.laneOff;
+      if (v.kind === 'scooter') {
+        speed *= 0.55 + 0.45 * Math.sin(v.t * 1.7 + v.phase); // surging/braking
+        if (Math.sin(v.t * 0.6 + v.phase) > 0.93) speed = 0; // occasional full stop
+        lane += Math.sin(v.t * 2.3 + v.phase) * v.swerveAmp; // lateral weave
+      }
+      v.s += v.dir * speed * dt;
       if (v.s > v.sMax) { v.s = v.sMax; v.dir = -1; }
       else if (v.s < v.sMin) { v.s = v.sMin; v.dir = 1; }
       v.hitCd = Math.max(0, v.hitCd - dt);
@@ -257,7 +322,7 @@ export class Traffic {
       const c = samplePath(v.path, v.s);
       const hx = c.dx * v.dir, hz = c.dz * v.dir;
       const rx = -hz, rz = hx;
-      v.group.position.set(c.x + rx * v.laneOff, 0, c.z + rz * v.laneOff);
+      v.group.position.set(c.x + rx * lane, 0, c.z + rz * lane);
       v.group.rotation.y = Math.atan2(hx, hz);
 
       // shadow LOD: only vehicles near the player render into the shadow map
@@ -266,8 +331,8 @@ export class Traffic {
       // collision segment tail -> head (in world space, lane offset applied)
       const t0 = samplePath(v.path, v.s - spec.halfLen);
       const t1 = samplePath(v.path, v.s + spec.halfLen);
-      const ax = t0.x + rx * v.laneOff, az = t0.z + rz * v.laneOff;
-      const bx = t1.x + rx * v.laneOff, bz = t1.z + rz * v.laneOff;
+      const ax = t0.x + rx * lane, az = t0.z + rz * lane;
+      const bx = t1.x + rx * lane, bz = t1.z + rz * lane;
 
       // the player has to avoid the traffic
       if (v.hitCd <= 0 &&
@@ -275,17 +340,21 @@ export class Traffic {
         v.hitCd = 1.4;
         if (onPlayerHit(spec.playerDmg, c.x, c.z, spec.shake)) {
           const side = Math.sign((player.pos.x - c.x) * rx + (player.pos.z - c.z) * rz) || 1;
-          player.vel.x += rx * 9 * side;
-          player.vel.z += rz * 9 * side;
-          sfx.crash();
+          const kick = v.kind === 'scooter' ? 3 : 9;
+          player.vel.x += rx * kick * side;
+          player.vel.z += rz * kick * side;
+          if (v.kind === 'scooter') sfx.bell(); else sfx.crash();
         }
       }
 
-      // trams and buses honk before they reach you
+      // trams and buses honk before they reach you; scooters ding annoyingly
       if (v.kind !== 'car' && v.hornCd <= 0) {
         const dx = player.pos.x - c.x, dz = player.pos.z - c.z;
         const d = Math.hypot(dx, dz);
-        if (d < 16 && d > 0.1 && (dx / d) * hx + (dz / d) * hz > 0.88) {
+        const ahead = (dx / d) * hx + (dz / d) * hz;
+        if (v.kind === 'scooter') {
+          if (d < 9 && d > 0.1) { v.hornCd = 2.2; sfx.bell(); }
+        } else if (d < 16 && d > 0.1 && ahead > 0.88) {
           v.hornCd = 3;
           sfx.horn(v.kind === 'tram' ? 'tram' : 'car');
         }

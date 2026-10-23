@@ -63,7 +63,9 @@ export function buildLandmarks(scene: THREE.Scene): Landmarks {
   const matFar = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, fog: false });
   const matGrass = new THREE.MeshStandardMaterial({ color: 0x55743f, roughness: 1, fog: false });
   const matTrunk = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1, flatShading: true });
-  const matLeaf = new THREE.MeshStandardMaterial({ color: 0x46653a, roughness: 1, flatShading: true });
+  // Autumn foliage: white base so per-instance setColorAt provides the palette.
+  const matLeaf = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+  const AUTUMN = [0xd97a2b, 0xc0392b, 0xe0b53c, 0x9a5a1f, 0x6b7a3a, 0xb4622a];
 
   const paint: THREE.BufferGeometry[] = []; // merged into ONE vertex-coloured mesh
   const far: THREE.BufferGeometry[] = [];   // fog-free Carlanderska, merged
@@ -178,12 +180,16 @@ export function buildLandmarks(scene: THREE.Scene): Landmarks {
     const trunks = new THREE.InstancedMesh(trunkG, matTrunk, treePts.length);
     const leaves = new THREE.InstancedMesh(leafG, matLeaf, treePts.length);
     const m = new THREE.Matrix4();
+    const lc = new THREE.Color();
     treePts.forEach(([x, z], i) => {
       const s = 0.8 + rnd() * 0.7;
       m.makeScale(s, s, s).setPosition(x, 0, z);
       trunks.setMatrixAt(i, m);
       leaves.setMatrixAt(i, m);
+      lc.setHex(AUTUMN[Math.floor(rnd() * AUTUMN.length)]);
+      leaves.setColorAt(i, lc);
     });
+    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
     root.add(trunks, leaves);
   }
 
