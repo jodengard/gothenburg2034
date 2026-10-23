@@ -45,7 +45,54 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- Renderer / scene -------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Android Chrome releases the previous page's WebGL context asynchronously on
+// reload, and reclaims contexts from backgrounded tabs (very visible with many
+// tabs open). Creation can therefore fail transiently — retry a few times.
+function createRenderer(): THREE.WebGLRenderer {
+  let lastErr: unknown;
+  for (let i = 0; i < 4; i++) {
+    try {
+      return new THREE.WebGLRenderer({ antialias: true });
+    } catch (e) {
+      lastErr = e;
+      const until = performance.now() + 400; // let the GPU process free contexts
+      while (performance.now() < until) { /* short blocking wait, only on failure */ }
+    }
+  }
+  throw lastErr;
+}
+
+let renderer: THREE.WebGLRenderer;
+try {
+  renderer = createRenderer();
+} catch {
+  showFatal('Could not start 3D graphics (WebGL). You likely have too many tabs open — close a few and reload.');
+  throw new Error('WebGL unavailable');
+}
+
+// If Chrome reclaims our context mid-session the canvas goes white; detect it,
+// stop rendering and offer a one-tap reload instead of a silent white screen.
+let contextLost = false;
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  contextLost = true;
+  const id = 'ctx-lost';
+  if (!document.getElementById(id)) {
+    const d = document.createElement('div');
+    d.id = id;
+    d.style.cssText = 'position:fixed;inset:0;background:#000d;z-index:99;display:flex;' +
+      'flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff;' +
+      'font-family:sans-serif;text-align:center;padding:28px;cursor:pointer';
+    d.innerHTML = '<div style="font-size:22px;font-weight:bold">Graphics were interrupted</div>' +
+      '<div style="opacity:.85;max-width:340px;line-height:1.5">Your browser reclaimed the 3D graphics ' +
+      '— usually caused by having many tabs open. Close a few tabs, then tap the button.</div>' +
+      '<div style="padding:14px 30px;background:#c0392b;border-radius:8px;font-weight:bold">TAP TO RELOAD</div>';
+    d.addEventListener('click', () => location.reload());
+    document.body.appendChild(d);
+  }
+});
+renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
+
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -452,6 +499,7 @@ let lastLockRetry = 0;
 
 function lockPointer(): void {
   resumeAudio();
+  if (touch) return; // touch uses drag-look; pointer lock on mobile only shows a Chrome error toast
   try {
     const p = renderer.domElement.requestPointerLock() as unknown;
     if (p instanceof Promise) p.catch(() => { /* fallback mouse-look still active */ });
@@ -555,7 +603,7 @@ function frame(now: number): void {
 
   fx.update(dt);
   hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw);
-  renderer.render(scene, camera);
+  if (!contextLost) renderer.render(scene, camera);
 }
 
 function step(dt: number): void {

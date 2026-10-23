@@ -64,9 +64,10 @@ export const THREAT = {
     [5, 7],
     [6, 8],
   ] as const,
-  // Spawn ring distance from player (meters).
-  spawnMinDist: 42,
-  spawnMaxDist: 72,
+  // Spawn ring distance from player (meters). Sized for the 260 m arena so
+  // spawns stay inside the bounds even when the player hugs an edge.
+  spawnMinDist: 36,
+  spawnMaxDist: 60,
   // A spawn is rejected if it is inside this view cone (dot product) AND has LOS.
   spawnViewDot: 0.82,
   throwersEnabledFromLevel: 3,
@@ -156,9 +157,16 @@ export const THROWABLE = {
 };
 
 export const WORLD = {
-  halfSize: 185, // arena is 370x370 m, sized to the real Korsvägen district
-  fogNear: 90,
-  fogFar: 430,
+  // Arena re-centred on the real district core: the strip between the
+  // Korsvägen crossing (west) and the Gothia Towers (east). 260x260 m keeps
+  // the crossing, all three towers, the tram network and the arterial grid
+  // while removing the empty outskirts of the old 370 m box.
+  // (centerX/centerZ = offset of the arena centre from the OSM projection centre)
+  centerX: 48,
+  centerZ: -8,
+  halfSize: 130,
+  fogNear: 60,
+  fogFar: 300,
   skyColor: 0x8fa8bf,
   fogColor: 0xc4ced8,
   groundColor: 0x5c6652,

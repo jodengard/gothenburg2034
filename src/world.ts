@@ -27,6 +27,10 @@ export interface World {
   playerStart: { x: number; z: number; yaw: number };
   /** Validate a spawn position: inside bounds and not inside/behind geometry. */
   isSpawnValid(x: number, z: number, from: Vec2): boolean;
+  /** Chained polylines of REAL tram rails / arterial roads for moving traffic. */
+  tramRoutes: Vec2[][];
+  busRoutes: Vec2[][];
+  carRoutes: Vec2[][];
 }
 
 // --- map data types ----------------------------------------------------------
@@ -44,7 +48,17 @@ interface MapData {
   roads: RoadWay[]; trams: TramWay[]; buildings: BuildingWay[];
   trees: TreePt[]; parks: ParkWay[];
 }
-const mapdata = mapdataRaw as unknown as MapData;
+// Shift all OSM geometry so the arena centre sits on the district core
+// (Korsvägen crossing ↔ Gothia Towers strip — see WORLD.centerX/centerZ).
+const raw = mapdataRaw as unknown as MapData;
+const shiftPt = (p: Pt): Pt => ({ x: p.x - WORLD.centerX, z: p.z - WORLD.centerZ });
+const mapdata: MapData = {
+  roads: raw.roads.map((r) => ({ ...r, pts: r.pts.map(shiftPt) })),
+  trams: raw.trams.map((t) => ({ ...t, pts: t.pts.map(shiftPt) })),
+  buildings: raw.buildings.map((b) => ({ ...b, pts: b.pts.map(shiftPt) })),
+  parks: raw.parks.map((p) => ({ ...p, pts: p.pts.map(shiftPt) })),
+  trees: raw.trees.map((t) => ({ ...t, x: t.x - WORLD.centerX, z: t.z - WORLD.centerZ })),
+};
 
 // --- procedural textures -----------------------------------------------------
 
@@ -157,6 +171,45 @@ const ROAD_W: Record<string, number> = {
 
 function polyInBox(pts: Pt[], m: number): boolean {
   return pts.some((p) => Math.abs(p.x) <= m && Math.abs(p.z) <= m);
+}
+
+function pathLen(pts: Pt[]): number {
+  let l = 0;
+  for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+  return l;
+}
+
+/**
+ * Greedily chain fragmented OSM polylines into longer routes by endpoint
+ * proximity. OSM splits roads/rails at every junction; vehicles need
+ * continuous paths, so we stitch pieces whose ends touch (within maxGap).
+ */
+export function chainPolys(polys: Pt[][], maxGap: number, minLen: number): Pt[][] {
+  const paths = polys.filter((p) => p.length >= 2).map((p) => p.slice());
+  const d = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.z - q.z);
+  const rev = (p: Pt[]) => p.slice().reverse();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < paths.length && !changed; i++) {
+      for (let j = i + 1; j < paths.length && !changed; j++) {
+        const a = paths[i], b = paths[j];
+        let merged: Pt[] | null = null;
+        if (d(a[a.length - 1], b[0]) <= maxGap) merged = [...a, ...b];
+        else if (d(a[0], b[b.length - 1]) <= maxGap) merged = [...b, ...a];
+        else if (d(a[a.length - 1], b[b.length - 1]) <= maxGap) merged = [...a, ...rev(b)];
+        else if (d(a[0], b[0]) <= maxGap) merged = [...rev(a), ...b];
+        if (!merged) continue;
+        const clean: Pt[] = [];
+        for (const p of merged) {
+          const last = clean[clean.length - 1];
+          if (!last || d(p, last) > 0.4) clean.push(p);
+        }
+        if (clean.length >= 2) { paths.splice(j, 1); paths[i] = clean; changed = true; }
+      }
+    }
+  }
+  return paths.filter((p) => pathLen(p) >= minLen);
 }
 
 function clampPts(pts: Pt[], m: number): Pt[] {
@@ -618,12 +671,37 @@ export function buildWorld(scene: THREE.Scene): World {
     colliders.push(makeAABB(x, z, w, d, 20));
   }
 
+  // --- traffic routes (consumed by traffic.ts): real rails + arterial roads -------------------
+  // Tram lines 5 & 6: the two longest chained rail routes through the crossing.
+  const tramRoutes = chainPolys(trams.map((t) => t.pts), 6, 130)
+    .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 2);
+  // Buses run on the arterials around the district (real routes 3 & 57 serve Korsvägen).
+  const busNames = new Set(['Örgrytevägen', 'Skånegatan', 'Södra Vägen', 'Korsvägen', 'Eklandagatan']);
+  const busRoutes = chainPolys(roads.filter((r) => r.name && busNames.has(r.name)).map((r) => r.pts), 5, 150)
+    .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 3);
+  // Cars: a handful of distinct medium-length streets, spread over the arena.
+  const carRoutes: Pt[][] = [];
+  {
+    const carPool = roads.filter((r) =>
+      ['secondary', 'tertiary', 'unclassified', 'residential'].includes(r.highway) && pathLen(r.pts) >= 70);
+    const used = new Set<number>();
+    let guard = 0;
+    while (carRoutes.length < 8 && guard++ < 300 && carPool.length) {
+      const r = rng.pick(carPool);
+      if (used.has(r.id)) continue;
+      used.add(r.id);
+      carRoutes.push(r.pts);
+    }
+  }
+
   // --- player start: on the street by the crossing, facing the towers -------------------------
-  let start = { x: 0, z: 60 };
+  // Same physical spot as before, expressed in the re-centred arena coordinates.
+  const startTarget = { x: 0 - WORLD.centerX, z: 70 - WORLD.centerZ };
+  let start = { x: startTarget.x, z: startTarget.z };
   let sd = 1e9;
   for (const r of roads.filter((r) => r.name === 'Örgrytevägen' || r.name === 'Korsvägen')) {
     for (const p of r.pts) {
-      const d = Math.hypot(p.x - 0, p.z - 70);
+      const d = Math.hypot(p.x - startTarget.x, p.z - startTarget.z);
       if (d < sd) { sd = d; start = { x: p.x, z: p.z }; }
     }
   }
@@ -644,5 +722,10 @@ export function buildWorld(scene: THREE.Scene): World {
     return !segmentBlocked(from, dir, dist - 1.5, colliders);
   };
 
-  return { colliders, throwables, playerStart: { x: start.x, z: start.z, yaw }, isSpawnValid };
+  return {
+    colliders, throwables,
+    playerStart: { x: start.x, z: start.z, yaw },
+    isSpawnValid,
+    tramRoutes, busRoutes, carRoutes,
+  };
 }
