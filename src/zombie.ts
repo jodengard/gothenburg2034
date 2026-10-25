@@ -57,6 +57,8 @@ export interface Zombie {
   carrying: ThrowableObject | null;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
   ride: RideAnchor | null;
+  /** true on the frame a riding zombie dies (ride already cleared) — carrot drops. */
+  wasRiding: boolean;
   /** Damage attribution for the killing blow (fatalities only on player kills). */
   lastHitHead: boolean;
   lastHitByPlayer: boolean;
@@ -185,7 +187,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, ride: null, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, ride: null, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -211,6 +213,7 @@ export class ZombieManager {
     zom.targetObj = null;
     zom.carrying = null;
     zom.ride = null;
+    zom.wasRiding = false;
     zom.lastHitHead = false;
     zom.lastHitByPlayer = false;
     zom.exploded = false;
@@ -266,6 +269,7 @@ export class ZombieManager {
     z.fallDir = Math.random() < 0.5 ? 1 : -1;
     // Fatality: a player kill detonates the corpse — headshots always, others sometimes.
     z.exploded = z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance);
+    z.wasRiding = z.ride !== null; // carrot drops key off this before we clear ride
     if (z.ride) {
       z.ride = null; // tumble off the vehicle; traffic notices and drops it
       z.mesh.position.y = 0;

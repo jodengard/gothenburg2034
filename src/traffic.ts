@@ -220,7 +220,7 @@ function tinted(geo: THREE.BufferGeometry, color: number): THREE.BufferGeometry 
  * Merged into ONE vertex-coloured mesh — 12 of these swarm the streets and
  * separate parts would cost ~70 draw calls on mobile.
  */
-function buildScooter(): THREE.Mesh {
+export function buildScooter(): THREE.Mesh {
   const wheel = new THREE.CylinderGeometry(0.13, 0.13, 0.07, 10);
   wheel.rotateZ(Math.PI / 2);
   const parts: THREE.BufferGeometry[] = [];

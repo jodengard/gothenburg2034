@@ -18,7 +18,34 @@ node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=42
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
 
-## Current milestone: P (scooter tricks on benches & parked cars) — verified
+## Current milestone: Q (carrot drops → AI bunny helper on a kickbike) — verified
+
+### Added — carrots (`main.ts` + `zombie.ts` `wasRiding`)
+- Zombies drop **carrots** on death: 5 % normally, **35 % for scooter-riding
+  hooligans** (they carry the good stuff). `kill()` now records `wasRiding`
+  before clearing `ride`, so `onKill` can weight the roll.
+- Carrots are a glowing orange cone + greens that spin and bob; **walking over
+  one** auto-picks it up (no E needed), plays the pickup chime and pops a gold
+  **🥕 BUNNY HELPER!** banner.
+
+### Added — the helper (`src/bunny.ts`, reuses `rabbit.ts` + `traffic.ts`)
+- Each carrot spawns a **Lisebergskanin on a VOI kickbike** — the player's
+  rabbit mesh (on the deck, y 0.18) parented to the exported `buildScooter()`
+  mesh — one of up to **3** simultaneous champions (oldest recycled), each with
+  **45 s** of carrot power (blinks out in the last 3 s).
+- AI: charges the **nearest zombie** (steer-rate 2.6 rad/s, top speed 7.5 m/s,
+  leans into turns, slides along world colliders), idles in reach and
+  **chainsaws** it: 55 dps in 0.25 s ticks with a shove, `byPlayer` attribution
+  (kills count, fatalities can pop), stuttering `sfx.chainsaw` buzz while
+  cutting and a dying growl when done. With no action it patrols the player.
+- Verified in browser sim (12 assertions): rider kill dropped a carrot (2
+  kills); auto-pickup spawned the helper + emoji popup; helper charged 8.4 m
+  and chainsaw-killed a zombie (kill credited); cap at 3 with oldest recycled;
+  lifetime expiry despawns; restart clears helpers + carrots; 0 console errors.
+- Screenshot: the kickbike kanin mid-chainsaw on a zombie, Gothia Towers and
+  the Liseberg wheel behind.
+
+## Previous milestone: P (scooter tricks on benches & parked cars) — verified
 
 ### Added — rideable surfaces (`world.ts` + `collision.ts`)
 - `buildWorld` now exports `surfaces: RideSurface[]` — the rideable tops of **parked

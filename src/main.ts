@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -23,6 +23,7 @@ import { rng } from './rng';
 import { rayAABB } from './collision';
 import { TouchControls, isTouchDevice } from './touch';
 import { buildLisebergskanin } from './rabbit';
+import { BunnyHelpers } from './bunny';
 
 // --- Menu bootstrap ----------------------------------------------------------
 // Registered before any heavy work so a click or keypress during world
@@ -214,6 +215,8 @@ traffic.onTrick = (label, pts) => {
   state.trickScore += pts;
   hud.trick(`${label} +${pts}`);
 };
+// carrot-powered AI bunny helpers on kickbikes (see bunny.ts)
+const helpers = new BunnyHelpers(scene, world.colliders);
 const packs = new PackManager();
 const director = new Director();
 
@@ -244,6 +247,11 @@ const zombies = new ZombieManager(scene, world.colliders, {
     }
     const drop = rollDrop(state.threatLevel, rng);
     if (drop) spawnPickup(drop, z.pos.x, z.pos.z);
+    // carrots: scooter-riding hooligans carry the good stuff — a carrot
+    // summons a Lisebergskanin kickbike champion to fight at your side
+    if (rng.chance(z.wasRiding ? BUNNY.riderDropChance : BUNNY.dropChance)) {
+      spawnCarrot(z.pos.x, z.pos.z);
+    }
   },
   onHurtSound() {
     sfx.zombieHurt();
@@ -306,6 +314,54 @@ function spawnPickup(weaponId: string, x: number, z: number): void {
 function clearPickups(): void {
   for (const p of pickups) scene.remove(p.mesh);
   pickups.length = 0;
+}
+
+// --- Carrots: dropped by zombies, walked over, summon a bunny helper --------
+const carrots: { pos: THREE.Vector3; mesh: THREE.Group }[] = [];
+
+function spawnCarrot(x: number, z: number): void {
+  const g = new THREE.Group();
+  const root = new THREE.Mesh(
+    new THREE.ConeGeometry(0.09, 0.42, 8),
+    new THREE.MeshLambertMaterial({ color: 0xff7f1f, emissive: 0x441500 }),
+  );
+  root.rotation.x = Math.PI; // tip down, shoulders up
+  root.position.y = 0.21;
+  const tops = new THREE.Mesh(
+    new THREE.ConeGeometry(0.07, 0.2, 5),
+    new THREE.MeshLambertMaterial({ color: 0x3fae2f }),
+  );
+  tops.position.y = 0.5;
+  const glow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.32, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffa64d, transparent: true, opacity: 0.4 }),
+  );
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = 0.02;
+  g.add(root, tops, glow);
+  g.position.set(x, 0.1, z);
+  scene.add(g);
+  carrots.push({ pos: new THREE.Vector3(x, 0.1, z), mesh: g });
+}
+
+function clearCarrots(): void {
+  for (const c of carrots) scene.remove(c.mesh);
+  carrots.length = 0;
+}
+
+function updateCarrots(dt: number): void {
+  for (let i = carrots.length - 1; i >= 0; i--) {
+    const c = carrots[i];
+    c.mesh.rotation.y += dt * 2.2;
+    c.mesh.position.y = 0.1 + Math.sin(state.time * 2.4 + c.pos.x) * 0.05;
+    if (Math.hypot(c.pos.x - player.pos.x, c.pos.z - player.pos.z) < BUNNY.pickupRange) {
+      scene.remove(c.mesh);
+      carrots.splice(i, 1);
+      helpers.spawn(c.pos.x, c.pos.z);
+      sfx.pickup();
+      hud.trick('\u{1F955} BUNNY HELPER!');
+    }
+  }
 }
 
 let nearestPickup: (typeof pickups)[number] | null = null;
@@ -624,6 +680,8 @@ function startGame(): void {
     packs.reset();
     director.reset();
     clearPickups();
+    clearCarrots();
+    helpers.clear();
     resetThrowables();
     player.immunity = Math.max(player.immunity, 5); // grace: traffic spares you for the first seconds
     hud.hideOverlays();
@@ -837,6 +895,8 @@ function step(dt: number): void {
 
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
   updatePickups(dt);
+  updateCarrots(dt);
+  helpers.update(dt, player, zombies);
 
   // scooter prompt overrides the weapon prompt (hijacking > pickups)
   if (traffic.ridden) hud.showPrompt('E — Dismount');
@@ -878,6 +938,7 @@ requestAnimationFrame(frame);
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
   state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
+  helpers, carrots,
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
   setFiring: (v: boolean) => { firing = v; },

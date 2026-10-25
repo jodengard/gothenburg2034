@@ -43,6 +43,20 @@ export const SCOOTER = {
   whipDur: 0.34, // tailwhip flip duration (s)
 };
 
+/** Carrot drops: pick one up and an extra Lisebergskanin joins the fight. */
+export const BUNNY = {
+  dropChance: 0.05, // chance a zombie kill drops a carrot
+  riderDropChance: 0.35, // scooter-riding hooligans carry the good stuff
+  pickupRange: 1.6, // carrots auto-pick-up when you walk over them
+  maxHelpers: 3, // bunny champions on the field at once
+  lifetime: 45, // seconds of carrot power per helper
+  speed: 7.5, // kickbike top speed (m/s)
+  accel: 6,
+  steerRate: 2.6, // rad/s steering toward the target
+  dps: 55, // chainsaw damage per second
+  range: 1.9, // chainsaw reach (m)
+};
+
 /** Fatalities & headshots: aim for the skull, watch them pop. */
 export const FATALITY = {
   headMult: 2.5, // headshot damage multiplier
