@@ -25,6 +25,7 @@ import { TouchControls, isTouchDevice } from './touch';
 import { buildLisebergskanin } from './rabbit';
 import { BunnyHelpers } from './bunny';
 import { buildShanghaiWorld, SH_ISLAND } from './shanghai';
+import { buildNoodleDrop } from './noodle';
 
 // --- Menu bootstrap ----------------------------------------------------------
 // Registered before any heavy work so a click or keypress during world
@@ -341,9 +342,11 @@ function doSwap(): void {
     atmosSh = buildAtmosphere(scene, worldSh, sunDir);
   }
   setActiveArena(travel.toSh);
-  noodle.eating = false;
+  noodle.cooking = false;
   noodle.cool = 0;
-  worldSh?.noodle?.setEating(null);
+  clearNoodleDrop();
+  worldSh?.noodle?.setCooking(null);
+  if (travel.toSh) sfx.musicStart(); else sfx.musicStop(); // Expo street music
   zombies.clearAll();
   projectiles.clearAll();
   clearPickups();
@@ -360,37 +363,44 @@ function doSwap(): void {
   sfx.pickup();
 }
 
-// --- Noodle stall: eat 牛肉麵, heal, watch the bunny slurp ----------------------
-const EAT_TIME = 2.6;
+// --- Noodle stall: the bunny chef cooks 牛肉麵, grab the bowl to heal ---------
+const COOK_TIME = 3;
 const NOODLE_COOLDOWN = 12;
-const noodle = { eating: false, t: 0, cool: 0, slurps: 0 };
+const noodle = { cooking: false, t: 0, cool: 0 };
+let noodleDrop: { mesh: THREE.Group; x: number; z: number; t: number } | null = null;
+
+function clearNoodleDrop(): void {
+  if (noodleDrop) scene.remove(noodleDrop.mesh);
+  noodleDrop = null;
+}
 
 function noodleNear(): boolean {
   const n = activeWorld.noodle;
-  if (!n || state.phase !== 'playing' || travel.active || traffic.ridden || noodle.eating) return false;
-  if (noodle.cool > 0) return false;
+  if (!n || state.phase !== 'playing' || travel.active || traffic.ridden) return false;
+  if (noodle.cooking || noodleDrop || noodle.cool > 0) return false;
   return Math.hypot(n.bar.x - player.pos.x, n.bar.z - player.pos.z) < 2.2;
 }
 
-function startEating(): void {
+function startCooking(): void {
   const n = activeWorld.noodle!;
-  noodle.eating = true;
+  noodle.cooking = true;
   noodle.t = 0;
-  noodle.slurps = 0;
-  player.immunity = Math.max(player.immunity, EAT_TIME + 1); // the horde can't interrupt dinner
-  n.setEating(0);
+  n.setCooking(0);
   sfx.bell(); // order up
+  sfx.sizzle(); // wok hits hot oil
+  hud.trick('\u{1F373} THE CHEF IS COOKING 牛肉麵…');
 }
 
-function finishEating(): void {
+function finishCooking(): void {
   const n = activeWorld.noodle!;
-  noodle.eating = false;
-  noodle.cool = NOODLE_COOLDOWN;
-  n.setEating(null);
-  player.health = PLAYER.maxHealth;
-  sfx.gulp();
+  noodle.cooking = false;
+  n.setCooking(null);
+  const g = buildNoodleDrop();
+  g.position.set(n.bar.x, 0.95, n.bar.z);
+  scene.add(g);
+  noodleDrop = { mesh: g, x: n.bar.x, z: n.bar.z, t: 0 };
   sfx.bell();
-  hud.trick('\u{1F35C} BEEF NOODLES — HP RESTORED');
+  hud.trick('\u{1F35C} 牛肉麵 READY — grab your bowl!');
 }
 
 /** The Flygbussen you could board right now (the moving coach at home, the parked one in Shanghai). */
@@ -516,15 +526,15 @@ function grabPickup(): void {
 // E does double duty: mount/dismount a scooter takes priority over pickups.
 
 function scooterInteract(): boolean {
-  if (noodle.eating) return false; // mouth full
+  if (noodle.cooking) return false; // the chef needs quiet
   if (traffic.ridden) {
     traffic.dismount();
     sfx.bell();
     return true;
   }
-  // the noodle stall: sit down for a bowl before considering the coach
+  // the noodle stall: put in an order before considering the coach
   if (noodleNear()) {
-    startEating();
+    startCooking();
     return true;
   }
   // the airport coach outranks a scooter: if it is within reach, you board it
@@ -797,9 +807,11 @@ function startGame(): void {
     deathShown = false;
     wasFiring = false;
     firing = false;
-    noodle.eating = false;
+    noodle.cooking = false;
     noodle.cool = 0;
-    worldSh?.noodle?.setEating(null);
+    clearNoodleDrop();
+    worldSh?.noodle?.setCooking(null);
+    sfx.musicStop();
     player.reset();
     player.pos.x = world.playerStart.x;
     player.pos.z = world.playerStart.z;
@@ -880,6 +892,7 @@ function frame(now: number): void {
       if (isMobile && !degraded && state.time > 6 && fpsAvg < 28) degradeQuality();
     } else if (state.phase === 'dead' && !deathShown) {
       deathShown = true;
+      sfx.musicStop(); // the band stops for the dead
       const best = saveHighScore({ time: state.time, kills: state.kills, threat: state.highestThreat });
       const bm = Math.floor(best.time / 60);
       const bs = Math.floor(best.time % 60);
@@ -949,29 +962,28 @@ function step(dt: number): void {
   player.input.moveX = touch?.moveX ?? 0;
   player.input.moveY = touch?.moveY ?? 0;
 
-  // eating at the noodle stall: feet off the ground, eyes on the bowl
+  // the bunny chef cooks your order; when it's done a bowl lands at the bar
   if (noodle.cool > 0) noodle.cool -= dt;
   const stall = activeWorld.noodle;
-  if (noodle.eating && stall) {
-    player.input.forward = player.input.back = player.input.left = player.input.right = false;
-    player.input.sprint = false;
-    player.input.jump = false;
-    player.input.moveX = player.input.moveY = 0;
-    let dy = stall.bar.yaw - player.yaw;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    player.yaw += dy * Math.min(1, dt * 6); // turn to face the counter
+  if (noodle.cooking && stall) {
     noodle.t += dt;
-    const p = Math.min(1, noodle.t / EAT_TIME);
-    stall.setEating(p);
-    const dips = Math.floor(p * 3 + 0.5); // one slurp per head-dip
-    if (dips > noodle.slurps) {
-      noodle.slurps = dips;
-      sfx.slurp();
-    }
-    if (noodle.t >= EAT_TIME) finishEating();
+    stall.setCooking(Math.min(1, noodle.t / COOK_TIME));
+    if (noodle.t >= COOK_TIME) finishCooking();
   }
   stall?.update(state.time);
+  if (noodleDrop) {
+    noodleDrop.t += dt;
+    noodleDrop.mesh.rotation.y += dt * 1.6;
+    noodleDrop.mesh.position.y = 0.95 + Math.sin(state.time * 3) * 0.05;
+    if (noodleDrop.t > 0.5 && Math.hypot(noodleDrop.x - player.pos.x, noodleDrop.z - player.pos.z) < 1.5) {
+      clearNoodleDrop(); // slurped on the spot
+      player.health = PLAYER.maxHealth;
+      noodle.cool = NOODLE_COOLDOWN;
+      sfx.slurp();
+      sfx.gulp();
+      hud.trick('\u{1F35C} BEEF NOODLES — HP RESTORED');
+    }
+  }
 
   // a hijacked scooter owns horizontal movement: W throttle, S brake/reverse,
   // A/D steer (touch stick: push forward/back to throttle, strafe to steer)
@@ -1024,7 +1036,7 @@ function step(dt: number): void {
   // weapons
   weapons.update(dt);
   const def = weapons.def;
-  if (firing && !noodle.eating) { // no shooting with a mouthful
+  if (firing) { // the chef works best with an audience that keeps shooting
     if (def.auto || def.kind === 'chain') fireWeapon();
     else if (!wasFiring) fireWeapon();
   }
@@ -1068,8 +1080,10 @@ function step(dt: number): void {
 
   // scooter prompt overrides the weapon prompt (hijacking > pickups)
   if (traffic.ridden) hud.showPrompt('E — Dismount');
-  else if (noodle.eating) hud.showPrompt('\u{1F35C} slurping…');
-  else if (noodleNear()) hud.showPrompt('E — 牛肉麵 Beef noodles (restore HP)');
+  else if (noodle.cooking) hud.showPrompt('\u{1F373} the chef is cooking 牛肉麵…');
+  else if (noodleDrop && Math.hypot(noodleDrop.x - player.pos.x, noodleDrop.z - player.pos.z) < 3)
+    hud.showPrompt('\u{1F35C} noodles ready — grab the bowl!');
+  else if (noodleNear()) hud.showPrompt('E — order 牛肉麵 Beef noodles (chef bunny cooks)');
   else if (shuttleNear()) {
     hud.showPrompt(inShanghai ? 'E — Flygbussen → GÖTEBORG' : 'E — Board the Flygbussen → SHANGHAI');
   } else if (traffic.findMount(player.pos.x, player.pos.z)) hud.showPrompt('E — Hijack the scooter');
@@ -1115,6 +1129,7 @@ requestAnimationFrame(frame);
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
   travel, island: SH_ISLAND, noodle,
+  get noodleDrop() { return noodleDrop; },
   inShanghai: () => inShanghai,
   activeWorld: () => activeWorld,
   travelTo: (toSh: boolean) => startTravel(toSh),

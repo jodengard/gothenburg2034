@@ -56,6 +56,68 @@ function playTone(freq: number, dur: number, gain: number, type: OscillatorType 
   o.stop(ctx.currentTime + dur);
 }
 
+// --- Shanghai street music ---------------------------------------------------
+// A tiny MIDI-style step sequencer: square-wave lead over a triangle bass,
+// C pentatonic (C D E G A), looped. Runs on a lookahead scheduler so the
+// melody stays in time even when the game hiccups.
+
+const BEAT = 0.3; // seconds per quarter note (~100 BPM)
+
+// [frequency Hz, length in beats] — two 8-bar phrases, 32 beats per loop.
+const E4 = 330, G4 = 392, A4 = 440, C5 = 523, D5 = 587, E5 = 659;
+const D4 = 294, C4 = 262;
+const MELODY: [number, number][] = [
+  [E4, 1], [G4, 1], [A4, 1], [C5, 1], [D5, 1], [C5, 1], [A4, 1], [G4, 1],
+  [A4, 1], [C5, 1], [A4, 1], [G4, 1], [E4, 1], [G4, 1], [D4, 2],
+  [E4, 1], [G4, 1], [A4, 1], [C5, 1], [D5, 1], [E5, 1], [C5, 1], [A4, 1],
+  [G4, 1], [A4, 1], [C5, 1], [A4, 1], [G4, 1], [E4, 1], [D4, 1], [C4, 2],
+];
+const BASS = [131, 110, 98, 110]; // C3 A2 G2 A2, one per bar
+
+function scheduleTone(freq: number, dur: number, when: number, type: OscillatorType, gain: number): void {
+  if (!ctx || !master) return;
+  const o = ctx.createOscillator();
+  o.type = type;
+  o.frequency.value = freq;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, when);
+  g.gain.exponentialRampToValueAtTime(0.001, when + dur);
+  o.connect(g).connect(master);
+  o.start(when);
+  o.stop(when + dur + 0.02);
+}
+
+let musicTimer: number | null = null;
+let musicNext = 0;
+let musicStep = 0;
+let musicBeat = 0;
+
+function startMusic(): void {
+  if (!ctx || musicTimer !== null) return;
+  musicNext = ctx.currentTime + 0.12;
+  musicStep = 0;
+  musicBeat = 0;
+  musicTimer = window.setInterval(() => {
+    if (!ctx) return;
+    while (musicNext < ctx.currentTime + 0.25) {
+      const [f, beats] = MELODY[musicStep];
+      scheduleTone(f, beats * BEAT * 0.92, musicNext, 'square', 0.04);
+      scheduleTone(f * 2, beats * BEAT * 0.45, musicNext, 'triangle', 0.014); // octave shimmer
+      if (musicBeat % 4 === 0) scheduleTone(BASS[(musicBeat / 4) % 4], BEAT * 1.8, musicNext, 'triangle', 0.07);
+      musicNext += beats * BEAT;
+      musicBeat += beats;
+      musicStep = (musicStep + 1) % MELODY.length;
+    }
+  }, 60);
+}
+
+function stopMusic(): void {
+  if (musicTimer !== null) {
+    clearInterval(musicTimer);
+    musicTimer = null;
+  }
+}
+
 export const sfx = {
   gunshot(kind: string): void {
     if (kind === 'shotgun') {
@@ -152,6 +214,17 @@ export const sfx = {
   gulp(): void {
     playTone(320, 0.12, 0.18, 'sine', -180);
     playTone(240, 0.1, 0.12, 'triangle', -120);
+  },
+  sizzle(): void {
+    // wok hitting hot oil: long quiet high hiss
+    playNoise(0.7, 4200, 0.7, 0.12);
+    playNoise(0.3, 2600, 0.9, 0.08);
+  },
+  musicStart(): void {
+    startMusic();
+  },
+  musicStop(): void {
+    stopMusic();
   },
   empty(): void {
     playTone(1200, 0.04, 0.1, 'square');

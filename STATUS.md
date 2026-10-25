@@ -21,7 +21,46 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: S (noodle stall + eating bunny + six stars in Shanghai) — verified
+## Current milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
+
+### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)
+- The stall bunny wears a **tall white chef's hat** (band + puff + crown,
+  parented to the head pivot so it rides every dip, snug between the ears).
+- **He cooks instead of eating with you**: a black **wok** sits in front of
+  him; on order (`E` at the bar) the arm swings over, works the wok in six
+  stir-circles, the head bobs over the steam, the pot steam doubles and the
+  noodle blob in the wok shrinks as the dish comes together (3 s cook).
+- **When it's done a noodle drop appears at the bar** (`buildNoodleDrop()`:
+  bowl + noodles + chopsticks + gold glow disc): it spins, bobs, and after a
+  0.5 s grace **walk-over pickup within 1.5 m restores HP to 100**
+  (slurp + gulp, `🍜 BEEF NOODLES — HP RESTORED`, 12 s cooldown starts on
+  collect). One bowl at a time; drop + cooking reset on swap and restart.
+- The player is **no longer locked in place** — you can fight and fire freely
+  while the chef works (old eat-lock, auto-face and immunity removed;
+  `setEating` → `setCooking`). New `sfx.sizzle()` (hot-oil noise burst) on
+  order; prompt order: dismount > cooking > grab bowl > order > shuttle > hijack.
+
+### Added — Chinese street music in Shanghai (`src/audio.ts`)
+- A tiny **MIDI-style step sequencer**: square lead + octave triangle
+  shimmer + triangle bass (C3/A2/G2/A2), **C pentatonic** two-phrase melody,
+  32 beats ≈ 9.6 s loop at ~100 BPM, lookahead-scheduled so timing survives
+  frame hiccups. `sfx.musicStart()/musicStop()`.
+- Starts on arrival at the Expo, stops on the ride home, on death and on
+  restart.
+
+### Verified (browser sim, 0 console errors)
+- Travel → music scheduler started (probe: 1 start / 1 stop after return).
+- Order at 40 HP: cooking starts, **player walks freely holding W mid-cook**
+  (was frozen before), firing unblocked, drop at 3 s, 0.5 s grace honored,
+  collect → **HP 100**, cooldown blocks then expires, re-order works.
+- Prompts: `E — order 牛肉麵…` / `🍳 the chef is cooking 牛肉麵…` /
+  `🍜 noodles ready — grab the bowl!` (only within 3 m of the drop).
+- Screenshots: chef hat between ears, mid-stir pose with shrinking wok
+  noodles, idle re-fill, and the glowing bowl drop at the bar.
+- tsc clean, 32/32 tests, build ok.
+
+## Previous milestone: S (noodle stall + eating bunny + six stars in Shanghai) — verified
+(eating flow since replaced by the chef in T; six stars unchanged)
 
 ### Added — the noodle stall (`src/noodle.ts`, new)
 - A red-canopied **牛肉麵 stall** on the west side of the Expo Axis plaza

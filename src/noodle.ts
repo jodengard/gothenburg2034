@@ -1,8 +1,9 @@
 /**
  * The noodle stall by the Expo axis (Shanghai arena).
- * Red canopy, lanterns, a steaming pot — and a resident Lisebergskanin on a
- * stool behind the counter. Eat here and the bunny slurps a bowl of 牛肉麵
- * with you while your health comes back.
+ * Red canopy, lanterns, a steaming pot — and a resident Lisebergskanin chef
+ * in a tall white hat behind the counter. Order a bowl of 牛肉麵 and the
+ * chef cooks it in the wok; when it's done a bowl appears at the bar for
+ * you to grab, and eating it restores your health.
  */
 import * as THREE from 'three';
 import { AABB, makeAABB } from './collision';
@@ -60,18 +61,35 @@ function mianSign(): THREE.CanvasTexture {
 
 export interface NoodleStall {
   group: THREE.Group;
-  /** The spot the player stands on to eat, and the yaw that faces the counter. */
+  /** The spot the player stands on to order, and the yaw that faces the counter. */
   bar: { x: number; z: number; yaw: number };
   colliders: AABB[];
-  /** null = idle; 0..1 = eating progress (head dips, chopsticks, shrinking noodles). */
-  setEating(p: number | null): void;
-  /** Idle ambience (steam, lantern sway, ear twitch) + the eating pose. */
+  /** null = idle; 0..1 = cooking progress (wok stirring, noodles shrinking). */
+  setCooking(p: number | null): void;
+  /** Idle ambience (steam, lantern sway, ear twitch) + the cooking pose. */
   update(time: number): void;
+}
+
+/** A finished bowl of 牛肉麵: the HP-restoring drop that appears at the bar. */
+export function buildNoodleDrop(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(cyl(0.16, 0.11, 0.14, mat(0xe8e4da), 0, 0.07, 0)); // bowl
+  g.add(cyl(0.135, 0.135, 0.06, mat(NOODLE), 0, 0.15, 0)); // noodles
+  g.add(box(0.02, 0.02, 0.26, mat(0xd8b48a), -0.03, 0.22, 0.03, -0.55)); // chopsticks
+  g.add(box(0.02, 0.02, 0.26, mat(0xc8a47a), 0.03, 0.22, 0.05, -0.5));
+  const glow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.34, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, opacity: 0.45, depthWrite: false }),
+  );
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = 0.02;
+  g.add(glow);
+  return g;
 }
 
 /**
  * Build the stall at (x, z), rotated so the counter faces rotY (local +Z).
- * The eating bunny sits behind the counter and is always visible.
+ * The chef bunny sits behind the counter and is always visible.
  */
 export function buildNoodleStall(x: number, z: number, rotY: number): NoodleStall {
   const group = new THREE.Group();
@@ -128,17 +146,21 @@ export function buildNoodleStall(x: number, z: number, rotY: number): NoodleStal
     steam.push(puff);
   }
 
-  // --- the bowl (shrinks as the bunny eats) ----------------------------------
+  // --- the chef's wok (right in front of the bunny, where the dish comes together)
+  group.add(cyl(0.26, 0.2, 0.1, mat(0x33333a), 0.35, 1.13, -0.12));
+  const wokNoodles = cyl(0.2, 0.2, 0.05, mat(NOODLE), 0.35, 1.17, -0.12);
+  group.add(wokNoodles);
+
+  // --- a ready bowl on the counter (prop; your order arrives as a drop) ------
   // offset to the bunny's right (world -Z at the shipped rotY) so the arm
   // reads in profile from the player's side instead of pointing at the camera
   const bowlGroup = new THREE.Group();
   bowlGroup.position.set(-0.05, 1.08, -0.27);
   bowlGroup.add(cyl(0.15, 0.11, 0.13, mat(0xe8e4da), 0, 0.065, 0));
-  const noodles = cyl(0.125, 0.125, 0.06, mat(NOODLE), 0, 0.13, 0);
-  bowlGroup.add(noodles);
+  bowlGroup.add(cyl(0.125, 0.125, 0.06, mat(NOODLE), 0, 0.13, 0));
   group.add(bowlGroup);
 
-  // --- the eating Lisebergskanin (always resident, animates while eating) ----
+  // --- the chef Lisebergskanin (always resident, cooks when you order) -------
   const bunny = new THREE.Group();
   bunny.position.set(0.35, 0, -0.42);
   bunny.add(cyl(0.19, 0.16, 0.42, mat(WOOD_DARK), 0, 0.21, 0)); // stool
@@ -159,14 +181,18 @@ export function buildNoodleStall(x: number, z: number, rotY: number): NoodleStal
   const earR = earL.clone();
   earR.position.x = 0.07;
   headPivot.add(earL, earR);
+  // tall white chef's hat, snug between the ears
+  headPivot.add(cyl(0.085, 0.095, 0.05, mat(WHITE), 0, 0.285, 0));  // band
+  headPivot.add(cyl(0.115, 0.095, 0.15, mat(WHITE), 0, 0.38, 0));   // puff
+  headPivot.add(cyl(0.07, 0.115, 0.05, mat(WHITE), 0, 0.475, 0));   // crown
   bunny.add(headPivot);
 
-  // left paw rests on the counter rim; right paw reaches forward with the
-  // chopsticks into the bowl (limbs extend +Z, rotation.x lifts/dips them)
+  // left paw rests on the counter rim; right paw works the wok with a pair of
+  // long cooking chopsticks (limbs extend +Z, rotation.x lifts/dips them)
   bunny.add(box(0.08, 0.24, 0.08, mat(WHITE), -0.17, 1.12, 0.14, -1.1));
   const armR = new THREE.Group();
   armR.position.set(0.15, 1.18, 0.02); // shoulder above the counter top
-  armR.rotation.y = -1.2; // reach across to the bowl on the right
+  armR.rotation.y = -1.2; // rests toward the bowl on the right
   armR.add(box(0.08, 0.08, 0.24, mat(WHITE), 0, 0, 0.12)); // forearm, forward
   const sticks = new THREE.Group();
   sticks.position.set(-0.05, 0.01, 0.24);
@@ -189,44 +215,50 @@ export function buildNoodleStall(x: number, z: number, rotY: number): NoodleStal
   const bz = z + cos * 1.55;
   const bar = { x: bx, z: bz, yaw: Math.atan2(sin, cos) };
 
-  let eating: number | null = null;
+  let cooking: number | null = null;
 
   return {
     group,
     bar,
     colliders,
-    setEating(p) { eating = p; },
+    setCooking(p) { cooking = p; },
     update(time) {
-      // steam: three puffs rising on a loop, fading as they climb
+      // steam: three puffs rising on a loop, fading as they climb;
+      // the pot works overtime while the chef is cooking
+      const speed = cooking === null ? 0.35 : 0.8;
+      const opacity = cooking === null ? 0.24 : 0.42;
       for (let i = 0; i < steam.length; i++) {
-        const f = (time * 0.35 + i / steam.length) % 1;
+        const f = (time * speed + i / steam.length) % 1;
         const p = steam[i];
         p.position.set(-1.05 + Math.sin(time * 2 + i * 2.1) * 0.06, 1.62 + f * 0.75, 0.05);
         p.scale.setScalar(0.7 + f * 1.3);
-        (p.material as THREE.MeshBasicMaterial).opacity = 0.24 * (1 - f);
+        (p.material as THREE.MeshBasicMaterial).opacity = opacity * (1 - f);
       }
       // lanterns sway
       lanterns[0].rotation.z = Math.sin(time * 1.4) * 0.07;
       lanterns[1].rotation.z = Math.sin(time * 1.4 + 1.7) * 0.07;
 
-      if (eating === null) {
+      if (cooking === null) {
         // idle: ears twitch now and then, bunny looks around a little
         const twitch = Math.max(0, Math.sin(time * 0.9) - 0.92) * 9;
         earL.rotation.z = 0.12 + Math.sin(time * 7) * 0.35 * twitch;
         earR.rotation.z = -0.1 - Math.sin(time * 7.6) * 0.3 * twitch;
         headPivot.rotation.x = Math.sin(time * 0.7) * 0.05;
         headPivot.rotation.y = Math.sin(time * 0.45) * 0.25;
-        armR.rotation.x = -0.25;
-        noodles.scale.setScalar(1);
+        armR.rotation.set(-0.25, -1.2, 0);
+        wokNoodles.scale.setScalar(1);
       } else {
-        // eating: three head-dips per bowl, chopsticks bob, noodles shrink
-        const dip = 0.5 * (1 - Math.cos(eating * Math.PI * 6));
-        headPivot.rotation.x = dip * 0.62;
-        headPivot.rotation.y = -0.35; // nose over the bowl
-        earL.rotation.z = 0.1 + dip * 0.35;
-        earR.rotation.z = -0.1 - dip * 0.3;
-        armR.rotation.x = -0.25 + dip * 0.45; // chopsticks dive with each slurp
-        noodles.scale.setScalar(Math.max(0.02, 1 - eating));
+        // cooking: paw works the wok in six stir-circles, head bobs over the
+        // steam, and the noodles shrink as the dish comes together
+        const s = cooking * Math.PI * 12;
+        armR.rotation.y = -1.2 + Math.min(1, cooking * 8) * 1.3; // swing over to the wok
+        armR.rotation.x = -0.35 + Math.sin(s) * 0.14;
+        armR.rotation.z = Math.cos(s) * 0.16;
+        headPivot.rotation.x = 0.18 + Math.sin(s) * 0.05;
+        headPivot.rotation.y = 0; // nose over the wok
+        earL.rotation.z = 0.12 + Math.sin(s * 0.5) * 0.08;
+        earR.rotation.z = -0.12 - Math.sin(s * 0.5) * 0.08;
+        wokNoodles.scale.setScalar(Math.max(0.02, 1 - cooking));
       }
     },
   };
