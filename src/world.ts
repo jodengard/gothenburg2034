@@ -44,6 +44,8 @@ export interface World {
   carRoutes: Vec2[][];
   /** Streetlight lamp-head positions (arena frame) — used for cobweb dressing. */
   lamps: Vec2[];
+  /** Landing spot of the Flygbussen return coach (Shanghai arena only). */
+  shuttle?: Vec2;
 }
 
 // --- map data types ----------------------------------------------------------

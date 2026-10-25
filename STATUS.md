@@ -13,12 +13,63 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
 npm test         # 32 unit tests (pure logic + headless zombie sim + traffic path math)
-node tools/fetch-map.mjs   # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
+node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
+node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
 
 Click **START**, then play. Esc pauses (releases pointer lock), Enter/button restarts after death.
+Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
+small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Q (carrot drops → AI bunny helper on a kickbike) — verified
+## Current milestone: R (Flygbussen → Shanghai Expo arena) — verified
+
+### Added — the Flygbussen (`traffic.ts`)
+- One of the two blue buses on the highway-bound route is now the **airport
+  coach**: navy livery, white flank stripe, amber **SHANGHAI** sign boards and
+  a roof beacon (`buildFlygbuss()`, exported for the return bus). Walk up to
+  it and **E — Board the Flygbussen → SHANGHAI** appears; boarding blasts the
+  horn, fades to black and teleports you.
+
+### Added — Shanghai Expo arena (`src/shanghai.ts`, new)
+- A second, **much smaller** arena island (160 m across vs Korsvägen's 260 m)
+  living at x = 1200 in the *same* scene, far outside the Gothenburg fog.
+  Built from real OSM data (`tools/fetch-map-shanghai.mjs` →
+  `src/mapdata-shanghai.json`, © OpenStreetMap contributors, ODbL) around the
+  **Expo Axis**: the Axis boulevard strip, three **Sun Valley glass cones**,
+  the **China Pavilion** red four-tier crown just outside the NE wall (real
+  bearing, landmark scale), the **Huangpu River** recessed behind the north
+  quay (barges + a fog-free **Bund** silhouette on the far bank, same
+  compression trick as the Gothenburg highway ribbon), neon-edged towers,
+  trees, lamps and real clipped building footprints (中华艺术宫, 世博源…).
+- **周家渡路** is the only real route through the arena → the Shanghai bus
+  drives it; no trams ("Shanghai runs buses"), a small 4-scooter hooligan
+  fleet, and a **parked return Flygbussen** on the plaza (E — back to
+  Göteborg). Zombie spawns, trick surfaces logic and roadkill all work there.
+
+### Architecture — arena swap (`main.ts`)
+- Player/zombies/projectiles/helpers share `world.colliders` **by reference**,
+  so `setActiveArena()` splices that array in place and every system follows;
+  `traffic` became a per-arena binding (`trafficG`/`trafficSh`, Shanghai +
+  its atmosphere built **lazily on first travel**, only the active one steps).
+- Travel is game-time driven (testable, no timers): 1.7 s trip, world swap at
+  the blackout (clears zombies/projectiles/pickups/carrots/helpers, packs
+  reset, 5 s traffic grace), fade back in, HUD arena label
+  (`GÖTEBORG · KORSVÄGEN` ↔ `SHANGHAI · 世博园区`) + 🚌 popup.
+  Restart always drops you back in Gothenburg.
+
+### Verified (browser sim, 0 console errors)
+- Board → fade 1 → swap after 103 steps → fade 0; player lands at the Expo
+  playerStart (1252, 34); colliders swap 129 ↔ 27; label switches.
+- Shanghai traffic: 1 bus + 4 scooters (4 riders), all on the island, no
+  trams; after 15 s the horde holds **28 zombies, 0 stranded** outside;
+  pistol **headshot kill** works; quay wall blocks the player at wall+radius.
+- Return bus prompt → board → back in Gothenburg (colliders restored);
+  restart from Shanghai → home; both directions re-boardable; 0 errors.
+- Screenshots: the Expo Axis at dusk (pavilion tiers + glass cones + the
+  parked SHANGHAI coach), the Huangpu with barge + Bund skyline, and the
+  Flygbussen in Korsvägen traffic.
+
+## Previous milestone: Q (carrot drops → AI bunny helper on a kickbike) — verified
 
 ### Added — carrots (`main.ts` + `zombie.ts` `wasRiding`)
 - Zombies drop **carrots** on death: 5 % normally, **35 % for scooter-riding

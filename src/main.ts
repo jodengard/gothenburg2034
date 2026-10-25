@@ -6,7 +6,7 @@ import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
 import { buildHighway } from './highway';
-import { buildAtmosphere } from './atmos';
+import { buildAtmosphere, Atmosphere } from './atmos';
 import { buildHalloween } from './halloween';
 import { Traffic } from './traffic';
 import { Player } from './player';
@@ -24,6 +24,7 @@ import { rayAABB } from './collision';
 import { TouchControls, isTouchDevice } from './touch';
 import { buildLisebergskanin } from './rabbit';
 import { BunnyHelpers } from './bunny';
+import { buildShanghaiWorld, SH_ISLAND } from './shanghai';
 
 // --- Menu bootstrap ----------------------------------------------------------
 // Registered before any heavy work so a click or keypress during world
@@ -199,7 +200,8 @@ window.addEventListener('resize', () => {
 const world: World = buildWorld(scene);
 const landmarks = buildLandmarks(scene);
 const highway = buildHighway(scene);
-const traffic = new Traffic(scene, world);
+const trafficG = new Traffic(scene, world);
+let traffic = trafficG; // the Traffic of the arena you are currently in (see travel below)
 const fx = new Fx(scene);
 const hud = new Hud();
 const player = new Player(camera, world.colliders);
@@ -211,7 +213,7 @@ rabbit.visible = false;
 scene.add(rabbit);
 const chaseCam = new THREE.Vector3();
 let wasRiding = false;
-traffic.onTrick = (label, pts) => {
+trafficG.onTrick = (label, pts) => {
   state.trickScore += pts;
   hud.trick(`${label} +${pts}`);
 };
@@ -260,7 +262,7 @@ const zombies = new ZombieManager(scene, world.colliders, {
 
 // Every street scooter gets a zombie hooligan riding it (kill the rider,
 // hijack the scooter).
-traffic.attachZombies(zombies);
+trafficG.attachZombies(zombies);
 
 const atmos = buildAtmosphere(scene, world, sunDir);
 const halloween = buildHalloween(scene, world, atmos.bonfirePos);
@@ -292,6 +294,81 @@ const projectiles = new ProjectileManager(scene, world.colliders, zombies, fx, {
     }
   },
 });
+
+// --- Flygbussen: Gothenburg ↔ Shanghai Expo teleport --------------------------
+// One of the blue buses is secretly the airport coach to Shanghai. Board it and
+// the world swaps to a second arena island far outside the fog (src/shanghai.ts).
+// player/zombies/projectiles/helpers all share world.colliders by reference,
+// so swapping that array's contents in place re-wires collision everywhere.
+const gothenburgColliders = [...world.colliders];
+let worldSh: World | null = null;
+let trafficSh: Traffic | null = null;
+let atmosSh: Atmosphere | null = null;
+let activeWorld: World = world;
+let inShanghai = false;
+const travel = { active: false, t: 0, toSh: true, swapped: false };
+
+function setActiveArena(toSh: boolean): void {
+  inShanghai = toSh;
+  activeWorld = toSh ? worldSh! : world;
+  traffic = toSh ? trafficSh! : trafficG;
+  const src = toSh ? worldSh!.colliders : gothenburgColliders;
+  world.colliders.length = 0;
+  world.colliders.push(...src);
+}
+
+function startTravel(toSh: boolean): void {
+  if (travel.active || state.phase !== 'playing') return;
+  if (traffic.ridden) traffic.dismount();
+  travel.active = true;
+  travel.t = 1.7;
+  travel.toSh = toSh;
+  travel.swapped = false;
+  sfx.horn('tram'); // the deepest horn the coach has
+  hud.fade(true);
+}
+
+function doSwap(): void {
+  if (travel.toSh && !worldSh) {
+    // first visit: build the Expo arena and its little traffic fleet
+    worldSh = buildShanghaiWorld(scene);
+    trafficSh = new Traffic(scene, worldSh, { scooterFleet: 4 });
+    trafficSh.attachZombies(zombies);
+    trafficSh.onTrick = (label, pts) => {
+      state.trickScore += pts;
+      hud.trick(`${label} +${pts}`);
+    };
+    atmosSh = buildAtmosphere(scene, worldSh, sunDir);
+  }
+  setActiveArena(travel.toSh);
+  zombies.clearAll();
+  projectiles.clearAll();
+  clearPickups();
+  clearCarrots();
+  helpers.clear(); // helpers would be stranded across town
+  packs.reset();
+  player.pos.x = activeWorld.playerStart.x;
+  player.pos.z = activeWorld.playerStart.z;
+  player.yaw = activeWorld.playerStart.yaw;
+  player.pitch = 0;
+  player.immunity = Math.max(player.immunity, 5); // grace: traffic spares you on arrival
+  hud.setArena(travel.toSh ? 'SHANGHAI · 世博园区' : 'GÖTEBORG · KORSVÄGEN');
+  hud.trick(travel.toSh ? '\u{1F68C} SHANGHAI EXPO — 世博会' : '\u{1F68C} BACK TO KORSVÄGEN');
+  sfx.pickup();
+}
+
+/** The Flygbussen you could board right now (the moving coach at home, the parked one in Shanghai). */
+function shuttleTargetPos(): { x: number; z: number } | null {
+  if (inShanghai) return activeWorld.shuttle ?? null;
+  const bus = trafficG.vehicles.find((v) => v.flygbuss);
+  return bus ? { x: bus.group.position.x, z: bus.group.position.z } : null;
+}
+
+function shuttleNear(): boolean {
+  if (state.phase !== 'playing' || travel.active || traffic.ridden) return false;
+  const st = shuttleTargetPos();
+  return !!st && Math.hypot(st.x - player.pos.x, st.z - player.pos.z) < 4.5;
+}
 
 // --- Pickups ----------------------------------------------------------------
 function spawnPickup(weaponId: string, x: number, z: number): void {
@@ -406,6 +483,11 @@ function scooterInteract(): boolean {
   if (traffic.ridden) {
     traffic.dismount();
     sfx.bell();
+    return true;
+  }
+  // the airport coach outranks a scooter: if it is within reach, you board it
+  if (shuttleNear()) {
+    startTravel(!inShanghai);
     return true;
   }
   const v = traffic.findMount(player.pos.x, player.pos.z);
@@ -665,6 +747,11 @@ document.getElementById('btn-restart')!.addEventListener('click', () => restart(
 function startGame(): void {
   try {
     resetState();
+    // always restart back home in Gothenburg
+    travel.active = false;
+    hud.fade(false);
+    if (inShanghai) setActiveArena(false);
+    hud.setArena('GÖTEBORG · KORSVÄGEN');
     deathShown = false;
     wasFiring = false;
     firing = false;
@@ -775,6 +862,7 @@ function frame(now: number): void {
     landmarks.update(dt);
     highway?.update(dt);
     atmos.update(dt);
+    atmosSh?.update(dt);
     halloween.update(dt, zombies.active, camera.position);
     hud.update(state, dt, fpsAvg, player.damageFlash, player.lastDamageDir, player.yaw,
       traffic.ridden ? traffic.ridden.battery / SCOOTER.batterySeconds : -1);
@@ -794,6 +882,16 @@ function frame(now: number): void {
 }
 
 function step(dt: number): void {
+  // Flygbussen teleport: fade out, swap arenas at the blackout, fade back in
+  if (travel.active) {
+    travel.t -= dt;
+    if (!travel.swapped && travel.t <= 0.85) {
+      doSwap();
+      travel.swapped = true;
+      hud.fade(false);
+    }
+    if (travel.t <= 0) travel.active = false;
+  }
   // input -> player
   player.input.forward = keys.has('KeyW');
   player.input.back = keys.has('KeyS');
@@ -878,7 +976,7 @@ function step(dt: number): void {
     sprinting: state.sprinting,
     eyeY: PLAYER.eyeHeight,
   };
-  director.update(dt, state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, world, rng, (size, x, z) => {
+  director.update(dt, state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
     const members: Zombie[] = [];
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;
@@ -889,9 +987,9 @@ function step(dt: number): void {
   });
 
   const throwablesAvailable =
-    state.threatLevel >= 3 && world.throwables.some((o: ThrowableObject) => !o.taken);
+    state.threatLevel >= 3 && activeWorld.throwables.some((o: ThrowableObject) => !o.taken);
   packs.update(dt, { player: playerView, threat: state.threatLevel, throwablesAvailable });
-  zombies.update(dt, playerView, state.threatLevel, world.throwables);
+  zombies.update(dt, playerView, state.threatLevel, activeWorld.throwables);
 
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
   updatePickups(dt);
@@ -900,7 +998,9 @@ function step(dt: number): void {
 
   // scooter prompt overrides the weapon prompt (hijacking > pickups)
   if (traffic.ridden) hud.showPrompt('E — Dismount');
-  else if (traffic.findMount(player.pos.x, player.pos.z)) hud.showPrompt('E — Hijack the scooter');
+  else if (shuttleNear()) {
+    hud.showPrompt(inShanghai ? 'E — Flygbussen → GÖTEBORG' : 'E — Board the Flygbussen → SHANGHAI');
+  } else if (traffic.findMount(player.pos.x, player.pos.z)) hud.showPrompt('E — Hijack the scooter');
 
   // traffic: trams/buses/cars on real streets — hazards for the player, reapers for the horde
   traffic.update(dt, player, zombies, (dmg, x, z, shake) => {
@@ -937,10 +1037,15 @@ requestAnimationFrame(frame);
 
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
-  state, player, weapons, zombies, packs, director, world, pickups, projectiles, traffic,
+  state, player, weapons, zombies, packs, director, world, pickups, projectiles,
+  get traffic() { return traffic; }, // follows the active arena
   helpers, carrots,
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
+  travel, island: SH_ISLAND,
+  inShanghai: () => inShanghai,
+  activeWorld: () => activeWorld,
+  travelTo: (toSh: boolean) => startTravel(toSh),
   setFiring: (v: boolean) => { firing = v; },
   setKeys: (codes: string[]) => { keys.clear(); for (const c of codes) keys.add(c); },
 };

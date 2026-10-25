@@ -28,6 +28,8 @@ export class Hud {
     goKills: $('go-kills'),
     goThreat: $('go-threat'),
     goBest: $('go-best'),
+    arena: $('hud-arena'),
+    fade: $('fade'),
     fps: $('hud-fps'),
   };
 
@@ -104,6 +106,16 @@ export class Hud {
     this.trickT = 1.7;
     this.els.trickpop.textContent = text;
     this.els.trickpop.style.opacity = '1';
+  }
+
+  /** Which arena the player is fighting in (shown top-centre). */
+  setArena(name: string): void {
+    this.els.arena.textContent = name;
+  }
+
+  /** Black fade for the Flygbussen teleport. */
+  fade(on: boolean): void {
+    this.els.fade.style.opacity = on ? '1' : '0';
   }
 
   showPrompt(text: string): void {

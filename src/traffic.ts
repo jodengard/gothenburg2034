@@ -104,11 +104,16 @@ interface Vehicle {
   /** airtime, visual spin, accumulated spin, tailwhips, whip flip timer */
   airT: number; spin: number; spinAccum: number; whips: number; whipT: number;
   jumpHeld: boolean;
+  /** the airport coach that shuttles between Gothenburg and Shanghai */
+  flygbuss?: boolean;
 }
 
 const MAT = {
   tramBlue: new THREE.MeshStandardMaterial({ color: 0x0d5aa7, roughness: 0.45, metalness: 0.35 }),
   busBlue: new THREE.MeshStandardMaterial({ color: 0x0b3d6e, roughness: 0.5, metalness: 0.3 }),
+  busNavy: new THREE.MeshStandardMaterial({ color: 0x16294d, roughness: 0.45, metalness: 0.35 }),
+  white: new THREE.MeshLambertMaterial({ color: 0xe8ecf0 }),
+  signAmber: new THREE.MeshBasicMaterial({ color: 0xffb000 }),
   glass: new THREE.MeshStandardMaterial({ color: 0x18222a, roughness: 0.15, metalness: 0.7 }),
   roof: new THREE.MeshStandardMaterial({ color: 0xdfe2e4, roughness: 0.6, metalness: 0.2 }),
   door: new THREE.MeshStandardMaterial({ color: 0xe8e8e6, roughness: 0.5, metalness: 0.2 }),
@@ -138,6 +143,49 @@ function board(num: string): THREE.Mesh {
     new THREE.PlaneGeometry(1.3, 0.55),
     new THREE.MeshBasicMaterial({ map: boardTex(num) }),
   );
+}
+
+/** Destination display for the Flygbussen coach (wide, amber, airport-bus style). */
+function signTex(text: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#0a0f14'; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = '#ffb000'; g.font = 'bold 34px Arial';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 128, 34);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * The Flygbussarna coach: navy livery, white stripe, lit 'SHANGHAI' boards.
+ * One of these on the Gothenburg streets is not a normal route 6 bus...
+ */
+export function buildFlygbuss(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(box(2.5, 3.0, 12, MAT.busNavy, 0, 1.6));
+  g.add(box(2.56, 0.9, 11.0, MAT.glass, 0, 2.1));
+  g.add(box(2.3, 0.12, 11.8, MAT.roof, 0, 3.12));
+  g.add(box(2.52, 0.5, 12.0, MAT.dark, 0, 0.42)); // skirt/wheels
+  g.add(box(2.54, 0.34, 11.4, MAT.white, 0, 1.28)); // side stripe
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 0.55),
+    new THREE.MeshBasicMaterial({ map: signTex('SHANGHAI') }),
+  );
+  sign.position.set(0, 2.72, 6.02);
+  g.add(sign);
+  const signBack = sign.clone();
+  signBack.rotation.y = Math.PI;
+  signBack.position.z = -6.02;
+  g.add(signBack);
+  g.add(box(0.9, 0.22, 0.5, MAT.signAmber, 0, 3.28, 2.6)); // roof beacon
+  g.add(box(0.26, 0.18, 0.06, MAT.headlight, 0.85, 0.8, 6.0));
+  g.add(box(0.26, 0.18, 0.06, MAT.headlight, -0.85, 0.8, 6.0));
+  g.add(box(0.26, 0.18, 0.06, MAT.taillight, 0.85, 0.8, -6.0));
+  g.add(box(0.26, 0.18, 0.06, MAT.taillight, -0.85, 0.8, -6.0));
+  return g;
 }
 
 function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
@@ -251,6 +299,7 @@ export class Traffic {
   private root = new THREE.Group();
   private rng = new RNG(4242);
   private colliders: AABB[];
+  private scooterFleet: number;
   private scooterRoutes: Vec2[][];
   private zm: ZombieManager | null = null;
   private riddenV: Vehicle | null = null;
@@ -261,9 +310,10 @@ export class Traffic {
   /** called on a clean landing with a scored trick */
   onTrick: ((label: string, points: number) => void) | null = null;
 
-  constructor(scene: THREE.Scene, world: World) {
+  constructor(scene: THREE.Scene, world: World, opts?: { scooterFleet?: number }) {
     scene.add(this.root);
     const rng = this.rng;
+    this.scooterFleet = opts?.scooterFleet ?? SCOOTER.fleet;
     this.colliders = world.colliders;
     this.surfaces = world.surfaces;
     for (const s of world.surfaces) this.rideTop.set(s.col, s.top);
@@ -280,7 +330,9 @@ export class Traffic {
     } else {
       world.tramRoutes.forEach((pts, i) => this.spawn('tram', pts, rng, [5, 6][i % 2]));
     }
-    world.busRoutes.forEach((pts, i) => this.spawn('bus', pts, rng, [3, 57, 6][i % 3]));
+    // The first bus line is the Flygbussen: the airport coach that (oddly)
+    // terminates in Shanghai — board it to travel there.
+    world.busRoutes.forEach((pts, i) => this.spawn('bus', pts, rng, [3, 57, 6][i % 3], undefined, i === 0));
     world.carRoutes.forEach((pts, i) => {
       const total = makePath(pts).total;
       const h = SPEC.car.halfLen;
@@ -295,12 +347,12 @@ export class Traffic {
     });
     // VOI scooters: a couple on every car route (capped) — they are everywhere
     this.scooterRoutes = world.carRoutes.length ? world.carRoutes : world.busRoutes;
-    for (let i = 0; this.scooterRoutes.length && i < SCOOTER.fleet; i++) {
+    for (let i = 0; this.scooterRoutes.length && i < this.scooterFleet; i++) {
       this.spawn('scooter', this.scooterRoutes[i % this.scooterRoutes.length], rng, 0);
     }
   }
 
-  private spawn(kind: Kind, pts: Vec2[], rng: RNG, line: number, range?: [number, number]): Vehicle | null {
+  private spawn(kind: Kind, pts: Vec2[], rng: RNG, line: number, range?: [number, number], flygbuss = false): Vehicle | null {
     if (pts.length < 2) return null;
     const path = makePath(pts);
     const spec = SPEC[kind];
@@ -309,11 +361,11 @@ export class Traffic {
     const sMax = range ? range[1] : path.total - spec.halfLen - 4;
     if (sMax - sMin < 10) return null;
     const group = kind === 'tram' ? buildTram(line)
-      : kind === 'bus' ? buildBus(line)
+      : kind === 'bus' ? (flygbuss ? buildFlygbuss() : buildBus(line))
       : kind === 'scooter' ? buildScooter()
       : buildCar(rng);
     const v: Vehicle = {
-      kind, path, group, laneOff: spec.laneOff,
+      kind, path, group, laneOff: spec.laneOff, flygbuss: flygbuss || undefined,
       speed: kind === 'car' || kind === 'scooter'
         ? (kind === 'car' ? rng.range(6.5, 9.5) : rng.range(3.8, 6.8))
         : spec.speed,
@@ -591,12 +643,12 @@ export class Traffic {
     if (!this.zm || !this.scooterRoutes.length) return;
     let n = 0;
     for (const v of this.vehicles) if (v.kind === 'scooter' && v.vstate !== 'dead') n++;
-    if (n >= SCOOTER.fleet) return;
+    if (n >= this.scooterFleet) return;
     this.respawnCd -= dt;
     if (this.respawnCd > 0) return;
     this.respawnCd = SCOOTER.respawnCd;
     // catch up quickly: up to 3 new scooters per tick
-    for (let k = 0; k < 3 && n + k < SCOOTER.fleet; k++) {
+    for (let k = 0; k < 3 && n + k < this.scooterFleet; k++) {
       const route = this.scooterRoutes[Math.floor(Math.random() * this.scooterRoutes.length)];
       const v = this.spawn('scooter', route, this.rng, 0);
       if (v) this.attachRider(v);
@@ -611,7 +663,7 @@ export class Traffic {
     }
     this.respawnCd = 0;
     if (this.zm && this.scooterRoutes.length) {
-      for (let i = 0; i < SCOOTER.fleet; i++) {
+      for (let i = 0; i < this.scooterFleet; i++) {
         const route = this.scooterRoutes[Math.floor(Math.random() * this.scooterRoutes.length)];
         const v = this.spawn('scooter', route, this.rng, 0);
         if (v) this.attachRider(v);

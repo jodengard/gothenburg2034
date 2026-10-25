@@ -34,6 +34,8 @@
     #hud-threat { font-size: 22px; color: #ffd75e; margin-top: 2px; letter-spacing: 2px; }
 
     #hud-fps { position: absolute; top: 18px; right: 24px; color: #ffffff77; font-size: 12px; }
+    #hud-arena { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); color: #ffd75e; font-size: 13px; letter-spacing: 4px; text-shadow: 0 1px 3px #000; opacity: .85; white-space: nowrap; }
+    #fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .55s ease; }
 
     /* prompt */
     #prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); color: #fff; background: #000000aa; padding: 8px 16px; border: 1px solid #ffffff44; font-size: 16px; display: none; }
@@ -71,6 +73,7 @@
       <div id="hud-threat">★☆☆☆☆</div>
     </div>
     <div id="hud-fps"></div>
+    <div id="hud-arena">GÖTEBORG · KORSVÄGEN</div>
     <div id="bottom-left">
       <div id="hp-wrap"><div id="hp-fill"></div></div>
       <div id="hud-weapon">Baseball Bat</div>
@@ -81,6 +84,7 @@
     <div id="prompt"></div>
     <div id="vignette"></div>
     <div id="dmgdir"></div>
+    <div id="fade"></div>
   </div>
 
   <div id="menu" class="overlay">
