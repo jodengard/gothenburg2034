@@ -115,7 +115,8 @@ export function rollDrop(threatLevel: number, rng: RNG): string | null {
   const chance = 0.12 + 0.02 * (threatLevel - 1);
   if (!rng.chance(chance)) return null;
   const ids = Object.keys(WEAPONS);
-  const weights = ids.map((id) => WEAPONS[id].dropWeightByThreat[threatLevel - 1] ?? 0);
+  // Shanghai pins the threat display at 6 stars; drops still use the 5-level table
+  const weights = ids.map((id) => WEAPONS[id].dropWeightByThreat[Math.min(threatLevel, 5) - 1] ?? 0);
   if (weights.every((w) => w === 0)) return null;
   return rng.weighted(ids, weights);
 }

@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AABB, Vec2, makeAABB, segmentBlocked } from './collision';
 import { WORLD } from './config';
 import { RNG } from './rng';
+import type { NoodleStall } from './noodle';
 import mapdataRaw from './mapdata.json';
 
 export interface ThrowableObject {
@@ -46,6 +47,8 @@ export interface World {
   lamps: Vec2[];
   /** Landing spot of the Flygbussen return coach (Shanghai arena only). */
   shuttle?: Vec2;
+  /** Noodle stall near the Expo axis: eat ramen, heal, watch the bunny eat. */
+  noodle?: NoodleStall;
 }
 
 // --- map data types ----------------------------------------------------------

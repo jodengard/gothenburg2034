@@ -21,7 +21,55 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: R (Flygbussen → Shanghai Expo arena) — verified
+## Current milestone: S (noodle stall + eating bunny + six stars in Shanghai) — verified
+
+### Added — the noodle stall (`src/noodle.ts`, new)
+- A red-canopied **牛肉麵 stall** on the west side of the Expo Axis plaza
+  (local 26, 16): gold fascia, swaying lanterns, a big **麵** sign, an amber
+  menu board (reuses `signTex` from traffic.ts), a steaming pot with looping
+  steam puffs and a resident **Lisebergskanin** on a stool behind the counter.
+- The bunny is always visible (landmark + hint): idle it twitches its ears
+  and looks around; when you order it **dips its head three times, works the
+  chopsticks and the noodle blob in the bowl shrinks to nothing**. The bowl
+  sits to the bunny's side so the arm reads in profile from the bar instead
+  of pointing at the camera.
+- Stall body is one rotated-AABB collider pushed into the Shanghai collider
+  set; `world.noodle` exposes `{ group, bar: {x,z,yaw}, colliders,
+  setEating(p), update(time) }` (optional field on `World`, type-only import
+  so there is no cycle).
+
+### Added — eating to heal (`main.ts`)
+- **E at the bar** (< 2.2 m, off cooldown, not riding): 2.6 s eating state —
+  movement/fire locked, camera auto-turns to face the counter, immunity
+  covers the whole bowl, one `sfx.slurp()` per head-dip, then **HP → 100**,
+  gulp + bell, `🍜 BEEF NOODLES — HP RESTORED` popup, 12 s cooldown.
+- Prompt order: dismount > slurping > noodles > shuttle > hijack. Eating
+  resets on travel swap and restart.
+- New audio: `sfx.slurp()` (bandpass-noise slurp + falling gulp tone) and
+  `sfx.gulp()`.
+
+### Changed — Shanghai always runs at six stars
+- `state.threatLevel = inShanghai ? 6 : director.level(time)` — zombie HP and
+  speed scale at level 6, HUD shows `★★★★★★` (☆ padding clamped so
+  `repeat(-1)` can't throw), game-over screen prints six stars.
+- Spawn pacing is pinned to max by feeding the director `time + 1e6` in
+  Shanghai (its internal level() clamps at 5); drops still read the 5-level
+  weight table (`rollDrop` index clamped). Measured: **52 zombies in 12 s**
+  vs the slow Gothenburg ramp.
+
+### Verified (browser sim, 0 console errors)
+- Travel → stall exists, bar at (1227.55, 16) yaw π/2, player stands there
+  un-shoved (first build had a `makeAABB` arg mix-up creating a 1.2 km
+  collider — fixed to center+size).
+- Eat at 40 HP: prompt `E — 牛肉麵 Beef noodles (restore HP)`, input lock
+  (0 m moved holding W), yaw lerps to the counter, firing blocked, finish in
+  157 steps → **HP 100**, cooldown 12 blocks re-order, expires → heal again.
+- Threat 6 in Shanghai (`★★★★★★`), threat-6 zombie HP ≈ 1.45× level-1;
+  return coach → home threat 1, `★☆☆☆☆`, no stall in Gothenburg.
+- Screenshots: idle + mid-slurp close-ups and a plaza wide shot show canopy,
+  sign, lanterns, steam, bunny + bowl. tsc clean, 32/32 tests, build ok.
+
+## Previous milestone: R (Flygbussen → Shanghai Expo arena) — verified
 
 ### Added — the Flygbussen (`traffic.ts`)
 - One of the two blue buses on the highway-bound route is now the **airport

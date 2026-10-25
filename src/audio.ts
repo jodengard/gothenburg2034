@@ -144,6 +144,15 @@ export const sfx = {
     playTone(660, 0.08, 0.2, 'square');
     playTone(990, 0.12, 0.2, 'square');
   },
+  slurp(): void {
+    // ramen slurp: breathy bandpass noise + a falling gulp tone
+    playNoise(0.28, 900, 1.4, 0.3);
+    playTone(520, 0.22, 0.12, 'sine', -260);
+  },
+  gulp(): void {
+    playTone(320, 0.12, 0.18, 'sine', -180);
+    playTone(240, 0.1, 0.12, 'triangle', -120);
+  },
   empty(): void {
     playTone(1200, 0.04, 0.1, 'square');
   },

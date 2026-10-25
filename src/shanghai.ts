@@ -10,6 +10,7 @@ import mapdataRaw from './mapdata-shanghai.json';
 import { AABB, Vec2, makeAABB, segmentBlocked } from './collision';
 import { World } from './world';
 import { buildFlygbuss } from './traffic';
+import { buildNoodleStall } from './noodle';
 
 interface Pt { x: number; z: number }
 interface RoadWay { id: number; highway: string; name: string | null; pts: Pt[] }
@@ -252,6 +253,11 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   bus.rotation.y = 2.4;
   scene.add(bus);
 
+  // --- noodle stall west of the Expo Axis: 牛肉麵 and a resident bunny ----------------
+  const noodle = buildNoodleStall(X(26), 16, Math.PI / 2);
+  scene.add(noodle.group);
+  colliders.push(...noodle.colliders);
+
   // --- routes: the real 周家渡路 arterial through the arena ----------------------
   const IN = H - 8;
   const zjd = raw.roads.filter((r) => r.name === '周家渡路').map((r) => longestInside(r.pts, IN));
@@ -284,5 +290,6 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
     carRoutes,
     lamps,
     shuttle: shuttlePos,
+    noodle,
   };
 }

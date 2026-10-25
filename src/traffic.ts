@@ -146,7 +146,7 @@ function board(num: string): THREE.Mesh {
 }
 
 /** Destination display for the Flygbussen coach (wide, amber, airport-bus style). */
-function signTex(text: string): THREE.CanvasTexture {
+export function signTex(text: string): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 64;
   const g = c.getContext('2d')!;

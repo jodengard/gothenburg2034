@@ -341,6 +341,9 @@ function doSwap(): void {
     atmosSh = buildAtmosphere(scene, worldSh, sunDir);
   }
   setActiveArena(travel.toSh);
+  noodle.eating = false;
+  noodle.cool = 0;
+  worldSh?.noodle?.setEating(null);
   zombies.clearAll();
   projectiles.clearAll();
   clearPickups();
@@ -355,6 +358,39 @@ function doSwap(): void {
   hud.setArena(travel.toSh ? 'SHANGHAI · 世博园区' : 'GÖTEBORG · KORSVÄGEN');
   hud.trick(travel.toSh ? '\u{1F68C} SHANGHAI EXPO — 世博会' : '\u{1F68C} BACK TO KORSVÄGEN');
   sfx.pickup();
+}
+
+// --- Noodle stall: eat 牛肉麵, heal, watch the bunny slurp ----------------------
+const EAT_TIME = 2.6;
+const NOODLE_COOLDOWN = 12;
+const noodle = { eating: false, t: 0, cool: 0, slurps: 0 };
+
+function noodleNear(): boolean {
+  const n = activeWorld.noodle;
+  if (!n || state.phase !== 'playing' || travel.active || traffic.ridden || noodle.eating) return false;
+  if (noodle.cool > 0) return false;
+  return Math.hypot(n.bar.x - player.pos.x, n.bar.z - player.pos.z) < 2.2;
+}
+
+function startEating(): void {
+  const n = activeWorld.noodle!;
+  noodle.eating = true;
+  noodle.t = 0;
+  noodle.slurps = 0;
+  player.immunity = Math.max(player.immunity, EAT_TIME + 1); // the horde can't interrupt dinner
+  n.setEating(0);
+  sfx.bell(); // order up
+}
+
+function finishEating(): void {
+  const n = activeWorld.noodle!;
+  noodle.eating = false;
+  noodle.cool = NOODLE_COOLDOWN;
+  n.setEating(null);
+  player.health = PLAYER.maxHealth;
+  sfx.gulp();
+  sfx.bell();
+  hud.trick('\u{1F35C} BEEF NOODLES — HP RESTORED');
 }
 
 /** The Flygbussen you could board right now (the moving coach at home, the parked one in Shanghai). */
@@ -480,9 +516,15 @@ function grabPickup(): void {
 // E does double duty: mount/dismount a scooter takes priority over pickups.
 
 function scooterInteract(): boolean {
+  if (noodle.eating) return false; // mouth full
   if (traffic.ridden) {
     traffic.dismount();
     sfx.bell();
+    return true;
+  }
+  // the noodle stall: sit down for a bowl before considering the coach
+  if (noodleNear()) {
+    startEating();
     return true;
   }
   // the airport coach outranks a scooter: if it is within reach, you board it
@@ -755,6 +797,9 @@ function startGame(): void {
     deathShown = false;
     wasFiring = false;
     firing = false;
+    noodle.eating = false;
+    noodle.cool = 0;
+    worldSh?.noodle?.setEating(null);
     player.reset();
     player.pos.x = world.playerStart.x;
     player.pos.z = world.playerStart.z;
@@ -904,6 +949,30 @@ function step(dt: number): void {
   player.input.moveX = touch?.moveX ?? 0;
   player.input.moveY = touch?.moveY ?? 0;
 
+  // eating at the noodle stall: feet off the ground, eyes on the bowl
+  if (noodle.cool > 0) noodle.cool -= dt;
+  const stall = activeWorld.noodle;
+  if (noodle.eating && stall) {
+    player.input.forward = player.input.back = player.input.left = player.input.right = false;
+    player.input.sprint = false;
+    player.input.jump = false;
+    player.input.moveX = player.input.moveY = 0;
+    let dy = stall.bar.yaw - player.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    player.yaw += dy * Math.min(1, dt * 6); // turn to face the counter
+    noodle.t += dt;
+    const p = Math.min(1, noodle.t / EAT_TIME);
+    stall.setEating(p);
+    const dips = Math.floor(p * 3 + 0.5); // one slurp per head-dip
+    if (dips > noodle.slurps) {
+      noodle.slurps = dips;
+      sfx.slurp();
+    }
+    if (noodle.t >= EAT_TIME) finishEating();
+  }
+  stall?.update(state.time);
+
   // a hijacked scooter owns horizontal movement: W throttle, S brake/reverse,
   // A/D steer (touch stick: push forward/back to throttle, strafe to steer)
   player.riding = traffic.ridden !== null;
@@ -948,14 +1017,14 @@ function step(dt: number): void {
   }
   viewModel.group.visible = !player.riding;
 
-  // threat
-  state.threatLevel = director.level(state.time);
+  // threat — Shanghai runs at a permanent six stars
+  state.threatLevel = inShanghai ? 6 : director.level(state.time);
   state.highestThreat = Math.max(state.highestThreat, state.threatLevel);
 
   // weapons
   weapons.update(dt);
   const def = weapons.def;
-  if (firing) {
+  if (firing && !noodle.eating) { // no shooting with a mouthful
     if (def.auto || def.kind === 'chain') fireWeapon();
     else if (!wasFiring) fireWeapon();
   }
@@ -976,7 +1045,8 @@ function step(dt: number): void {
     sprinting: state.sprinting,
     eyeY: PLAYER.eyeHeight,
   };
-  director.update(dt, state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
+  // in Shanghai the director spawns at max level from second one (+1e6 time credit)
+  director.update(dt, inShanghai ? state.time + 1e6 : state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
     const members: Zombie[] = [];
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;
@@ -998,6 +1068,8 @@ function step(dt: number): void {
 
   // scooter prompt overrides the weapon prompt (hijacking > pickups)
   if (traffic.ridden) hud.showPrompt('E — Dismount');
+  else if (noodle.eating) hud.showPrompt('\u{1F35C} slurping…');
+  else if (noodleNear()) hud.showPrompt('E — 牛肉麵 Beef noodles (restore HP)');
   else if (shuttleNear()) {
     hud.showPrompt(inShanghai ? 'E — Flygbussen → GÖTEBORG' : 'E — Board the Flygbussen → SHANGHAI');
   } else if (traffic.findMount(player.pos.x, player.pos.z)) hud.showPrompt('E — Hijack the scooter');
@@ -1042,7 +1114,7 @@ requestAnimationFrame(frame);
   helpers, carrots,
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
-  travel, island: SH_ISLAND,
+  travel, island: SH_ISLAND, noodle,
   inShanghai: () => inShanghai,
   activeWorld: () => activeWorld,
   travelTo: (toSh: boolean) => startTravel(toSh),
