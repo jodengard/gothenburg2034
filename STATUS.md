@@ -45,6 +45,10 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   drives it; no trams ("Shanghai runs buses"), a small 4-scooter hooligan
   fleet, and a **parked return Flygbussen** on the plaza (E — back to
   Göteborg). Zombie spawns, trick surfaces logic and roadkill all work there.
+- Geography reference: live map browsing was unavailable during this
+  milestone, so bearings, footprints and the river come straight from the
+  OSM extract (same pipeline as Gothenburg) plus the well-known Expo
+  layout (Axis → pavilion, river to the north).
 
 ### Architecture — arena swap (`main.ts`)
 - Player/zombies/projectiles/helpers share `world.colliders` **by reference**,
