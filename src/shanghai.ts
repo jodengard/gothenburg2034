@@ -264,8 +264,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
 
   // --- the return Flygbussen, parked on the plaza --------------------------------
   const shuttlePos = { x: X(30), z: 52 * S };
-  const bus = buildFlygbuss();
-  bus.scale.setScalar(S); // miniature coach on the miniature plaza
+  const bus = buildFlygbuss(); // real-size coach: you board it, so it stays player-scale
   bus.position.set(shuttlePos.x, 0, shuttlePos.z);
   bus.rotation.y = 2.4;
   scene.add(bus);

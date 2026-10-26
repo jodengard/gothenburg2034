@@ -32,8 +32,11 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   (original units) vs `Xw()` (already-scaled) so nothing double-scales (`src/shanghai.ts`).
 - **Player-scale objects stay real size**: benches, barriers, throwables, scooters,
   pickups, trees, pole/shelter heights, the noodle stall bar and the bowl drop
-  (`0.95 * SH_SCALE` counter height). Traffic vehicles scale ×0.5 (scooters keep
-  real size); speeds and damage unchanged.
+  (`0.95 * SH_SCALE` counter height) — **and every vehicle**: trams, buses,
+  cars, the Shanghai shuttle and parked cars keep real geometry, hitboxes and
+  rideable roof height; only their lane offsets and positions follow the
+  scaled streets (speeds and damage unchanged). The highway ribbon stays
+  miniature (horizon scenery).
 - Threat spawn ring tightened to 18–30 m; atmosphere embers now scatter over
   **each arena's own bounds** (derived from the boundary-wall colliders), so the
   Shanghai island finally gets its own fireflies (`src/atmos.ts`).
@@ -69,9 +72,9 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 `powerPreference: 'high-performance'`.
 
 ### Verified (browser sim, 0 console errors)
-- Gothenburg boots scaled: start (−24.7, 40.9), 119 colliders, 2 tram + 2 bus +
-  6 car routes chained, 22 traffic vehicles all on-map, 10 non-scooter vehicles
-  at scale 0.5; walking 3 s moves 9.1 m, stays in bounds.
+- Gothenburg boots scaled: start (−24.7, 40.9), 120 colliders, 2 tram + 2 bus +
+  6 car routes chained, 24 traffic vehicles all on-map and all at scale 1
+  (real size); walking 3 s moves 9.1 m, stays in bounds.
 - Shanghai swap lands on miniature coords: start (1226, 17), stall bar
   (1213.78, 8), return shuttle (1215, 26), spawn not inside any collider,
   bus + scooters present; cook → bowl drop at 0.475 m counter height,
@@ -80,6 +83,18 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   with Carlanderska on its hill, Expo boulevard with cone + pavilion, the
   scaled stall with chef bunny, quay tower row, and the chainsaw smoke plume.
 - tsc clean, 35/35 tests, build ok.
+
+### Follow-up — vehicles back to real size (user feedback: "too small")
+- First pass scaled trams/buses/cars/parked cars/shuttle ×0.5 with the streets;
+  that made rideable, run-over-able gameplay objects look like toys. Reverted
+  their geometry, colliders (`4.4 × 1.8 × 1.7` parked cars, `1.55` rideable
+  roof) and the Shanghai shuttle to real size — only lane offsets, spawn
+  positions and the two-car route threshold (`150 * WORLD.scale`) follow the
+  miniature streets.
+- Re-verified: all 24 Gothenburg + 5 Shanghai vehicles at scale 1, parked-car
+  colliders real size, tram hit-and-kill still works (real-size hitbox),
+  screenshots show full-size bus/shuttle/parked car against the miniature
+  district; tsc clean, 35/35 tests.
 
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 

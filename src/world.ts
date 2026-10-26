@@ -629,9 +629,9 @@ export function buildWorld(scene: THREE.Scene): World {
   const carColors = [0x8a2f2f, 0x2f4a8a, 0x9aa0a6, 0x2f6a4a, 0xd8c860, 0x33363b, 0xc8c8c8];
   const carBodyGeos = carColors.map(() => [] as THREE.BufferGeometry[]);
   const carDarkGeos: THREE.BufferGeometry[] = [];
-  const bodyGeo = new THREE.BoxGeometry(4.4 * S, 1.0 * S, 1.8 * S);
-  const cabGeo = new THREE.BoxGeometry(2.3 * S, 0.62 * S, 1.66 * S);
-  const wheelGeo = new THREE.CylinderGeometry(0.33 * S, 0.33 * S, 0.24 * S, 8);
+  const bodyGeo = new THREE.BoxGeometry(4.4, 1.0, 1.8);
+  const cabGeo = new THREE.BoxGeometry(2.3, 0.62, 1.66);
+  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 8);
   wheelGeo.rotateX(Math.PI / 2);
   let carIdx = 0;
   for (const r of roads) {
@@ -644,8 +644,8 @@ export function buildWorld(scene: THREE.Scene): World {
       if (k % 2) continue;
       const side = k % 4 === 1 ? 1 : -1;
       const nx = -s.dz * side, nz = s.dx * side;
-      const x = s.x + nx * (hw - 1.05 * S), z = s.z + nz * (hw - 1.05 * S);
-      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) || nearRoad(x, z, -1.2 * S)) continue;
+      const x = s.x + nx * (hw - 1.05), z = s.z + nz * (hw - 1.05);
+      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) || nearRoad(x, z, -1.2)) continue;
       const ry = Math.atan2(s.dx, s.dz) + (k % 8 < 4 ? 0 : Math.PI);
       const rot = new THREE.Matrix4().makeRotationY(ry);
       const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
@@ -653,16 +653,16 @@ export function buildWorld(scene: THREE.Scene): World {
         m.setPosition(x + ox * Math.cos(ry) + oz * Math.sin(ry), oy, z - ox * Math.sin(ry) + oz * Math.cos(ry));
         return g.clone().applyMatrix4(m);
       };
-      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72 * S, 0));
-      carDarkGeos.push(place(cabGeo, -0.15 * S, 1.5 * S, 0));
+      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72, 0));
+      carDarkGeos.push(place(cabGeo, -0.15, 1.5, 0));
       for (const [wx, wz] of [[1.45, 0.82], [1.45, -0.82], [-1.45, 0.82], [-1.45, -0.82]] as const) {
-        carDarkGeos.push(place(wheelGeo, wx * S, 0.33 * S, wz * S));
+        carDarkGeos.push(place(wheelGeo, wx, 0.33, wz));
       }
-      const c = (Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8) * S;
-      const sn = (Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8) * S;
-      const carCol = makeAABB(x, z, c, sn, 1.7 * S);
+      const c = Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8;
+      const sn = Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8;
+      const carCol = makeAABB(x, z, c, sn, 1.7);
       colliders.push(carCol);
-      rideable(carCol, 1.55 * S); // ride the roof — requires a jump
+      rideable(carCol, 1.55); // ride the roof — requires a jump
       carIdx++;
     }
   }
