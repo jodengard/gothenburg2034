@@ -123,6 +123,25 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   8 car + 8 scooter, Flygbussen live, ≥ 95 % of route vehicles moving in every
   1 s sample, no NaN poses, scene renders at 60 fps.
 
+### Scooter hooligans: deranged driving + roadkill (`traffic.ts`, `zombie.ts`)
+- Scooters now drive like maniacs: speed surges to 1.5× and crawls again,
+  sudden brake-checks, and a whole-street swerve (amp 0.9–1.7 m at a
+  per-hooligan frequency, plus handlebars jitter) that crosses the car, bus
+  and tram lanes — repeatedly into oncoming traffic.
+- **Rider traffic immunity removed**: traffic takes riders out. Balance so
+  the fleet survives the mayhem: a rider absorbs only 30 % of traffic damage
+  and at most one blow per 4 s — a car side-swipe staggers (24.5 < 42 HP) and
+  the next one finishes, a bus (45) or tram (350) kills outright. The dead
+  rider tumbles off, the scooter coasts to a stop and drops for hijacking or
+  towing exactly like a shot rider.
+- Fleet churn: `refillFleet` counts only ACTIVE scooters (a tow-waiting wreck
+  no longer blocks the quota), and the wreck pile is capped at 8 — the oldest
+  dropped ones get towed early so live scooter objects (and draw calls) stay
+  bounded.
+- Verified (80 s browser sim): avg 5.5 active riders (min 3, max 8), ~36
+  traffic kills, wrecks capped at 8, no NaN, 144 fps; screenshot shows the
+  yellow VOI decks + horde at Korsvägen; tsc clean, 35/35 tests.
+
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 
 ### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)

@@ -57,6 +57,9 @@ export interface Zombie {
   carrying: ThrowableObject | null;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
   ride: RideAnchor | null;
+  /** Traffic hit cooldown: a vehicle that just clipped this zombie cannot
+   * re-hit it on the same pass (one car side-swipe = one blow, not 60/s). */
+  trafficCd: number;
   /** true on the frame a riding zombie dies (ride already cleared) — carrot drops. */
   wasRiding: boolean;
   /** Damage attribution for the killing blow (fatalities only on player kills). */
@@ -187,7 +190,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, ride: null, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -213,6 +216,7 @@ export class ZombieManager {
     zom.targetObj = null;
     zom.carrying = null;
     zom.ride = null;
+    zom.trafficCd = 0;
     zom.wasRiding = false;
     zom.lastHitHead = false;
     zom.lastHitByPlayer = false;
@@ -343,6 +347,7 @@ export class ZombieManager {
 
       // draw-call LOD: distant zombies render as fewer meshes
       this.lod(z, dist);
+      if (z.trafficCd > 0) z.trafficCd -= dt;
 
       // riders stay welded to their vehicle every frame (AI is suspended,
       // but the scooter keeps moving — no throttled lag on the mesh)

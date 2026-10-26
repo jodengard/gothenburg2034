@@ -90,8 +90,9 @@ interface Vehicle {
   dir: number; speed: number; laneOff: number;
   hitCd: number; hornCd: number;
   shadowOn: boolean;
-  /** scooter weave: elapsed time, per-vehicle phase, lateral wobble amplitude */
-  t: number; phase: number; swerveAmp: number;
+  /** scooter weave: elapsed time, per-vehicle phase, swerve amplitude &
+   * frequency (hooligan driving crosses whole lanes, hence the big amp) */
+  t: number; phase: number; swerveAmp: number; swerveF: number;
   // --- scooter hooliganism ---
   vstate: VehicleState;
   /** zombie riding this scooter (scooters only); null once the rider is dead */
@@ -378,7 +379,11 @@ export class Traffic {
         : spec.speed,
       s: rng.range(sMin, sMax), sMin, sMax,
       dir: rng.chance(0.5) ? 1 : -1, hitCd: 0, hornCd: 0, shadowOn: true,
-      t: 0, phase: rng.range(0, Math.PI * 2), swerveAmp: kind === 'scooter' ? rng.range(0.5, 1.0) : 0,
+      t: 0, phase: rng.range(0, Math.PI * 2),
+      // hooligan weave: swerve amplitude reaches across the whole street
+      // (into the car/bus/tram lanes), frequency varies per hooligan
+      swerveAmp: kind === 'scooter' ? rng.range(0.9, 1.7) : 0,
+      swerveF: kind === 'scooter' ? rng.range(0.5, 1.4) : 1,
       vstate: 'route', rider: null, anchor: { x: 0, z: 0, heading: 0 },
       battery: kind === 'scooter' ? rng.range(6, SCOOTER.batterySeconds) : 0,
       despawnT: 0, heading: 0, spd: 0, freeX: 0, freeZ: 0,
@@ -648,8 +653,24 @@ export class Traffic {
   /** Keep the streets at a full fleet: towed scooters are replaced, with riders. */
   private refillFleet(dt: number): void {
     if (!this.zm || !this.scooterRoutes.length) return;
+    // keep the wreck pile finite: traffic takes riders out fast, so the
+    // tow truck "collects" the oldest dropped scooters once the curbs are
+    // full (caps live scooter objects and their draw calls)
+    const wrecks: { i: number; v: Vehicle }[] = [];
+    this.vehicles.forEach((v, i) => {
+      if (v.kind === 'scooter' && v.vstate === 'dropped') wrecks.push({ i, v });
+    });
+    const excess = wrecks.length - 8;
+    if (excess > 0) {
+      const doomed = wrecks.sort((a, b) => a.v.despawnT - b.v.despawnT).slice(0, excess)
+        .sort((a, b) => b.i - a.i); // remove back-to-front so indices stay valid
+      for (const w of doomed) this.removeVehicle(w.i);
+    }
     let n = 0;
-    for (const v of this.vehicles) if (v.kind === 'scooter' && v.vstate !== 'dead') n++;
+    // only ACTIVE scooters count toward the fleet: a rider killed by traffic
+    // becomes a tow-waiting wreck, and the streets must keep buzzing with a
+    // fresh hooligan rather than staying empty until the tow truck arrives
+    for (const v of this.vehicles) if (v.kind === 'scooter' && v.vstate === 'route') n++;
     if (n >= this.scooterFleet) return;
     this.respawnCd -= dt;
     if (this.respawnCd > 0) return;
@@ -701,13 +722,17 @@ export class Traffic {
         continue;
       }
 
-      // scooters wobble and stop-and-go like real shared e-scooters
+      // hooligan e-scooter riding: wild speed surges, sudden brake-checks
+      // and swerving that crosses every lane — straight into traffic, which
+      // takes them out (see the mow loop below). They never learned lane
+      // discipline and they never will.
       let speed = v.speed;
       let lane = v.laneOff;
       if (v.kind === 'scooter') {
-        speed *= 0.55 + 0.45 * Math.sin(v.t * 1.7 + v.phase); // surging/braking
-        if (Math.sin(v.t * 0.6 + v.phase) > 0.93) speed = 0; // occasional full stop
-        lane += Math.sin(v.t * 2.3 + v.phase) * v.swerveAmp; // lateral weave
+        speed *= 0.35 + 1.15 * Math.abs(Math.sin(v.t * 1.3 + v.phase)); // surge to 1.5×, crawl, surge
+        if (Math.sin(v.t * 0.6 + v.phase) > 0.9) speed = 0; // sudden brake-check
+        lane += Math.sin(v.t * v.swerveF + v.phase) * v.swerveAmp // whole-lane swerve
+          + Math.sin(v.t * 6.1 + v.phase * 3) * 0.35; // handlebars jitter
       }
       v.s += v.dir * speed * dt;
       if (v.s > v.sMax) { v.s = v.sMax; v.dir = -1; }
@@ -770,13 +795,19 @@ export class Traffic {
         }
       }
 
-      // traffic mows down zombies (kills route through the manager: credit + drops)
+      // traffic mows down zombies — scooter riders included: a hooligan
+      // swerving into the bus lane gets taken out, rider and all (kills
+      // route through the manager: credit + drops; the dead rider makes
+      // the scooter coast away and drop for hijacking). A scooter never
+      // mows its OWN rider — everyone else's, yes. Riders cling on through a
+      // car's glance (helmet: less damage, one blow per pass), but a bus or
+      // tram takes them out outright.
       for (const z of zombies.active) {
-        // riders ride: traffic never clips them (they dodge through it like the
-        // hooligans they are) — only gunfire, melee and player roadkill drop them
-        if (z.state === 'dead' || z.ride) continue;
+        if (z.state === 'dead' || z === v.rider || z.trafficCd > 0) continue;
         if (distPointSeg(z.pos.x, z.pos.z, ax, az, bx, bz) < spec.halfW + ZOMBIE.radius + 0.2) {
-          zombies.damage(z, spec.zombieDmg, rx * 7 + hx * 2, rz * 7 + hz * 2);
+          z.trafficCd = 4;
+          zombies.damage(z, z.ride ? spec.zombieDmg * 0.3 : spec.zombieDmg,
+            rx * 7 + hx * 2, rz * 7 + hz * 2);
         }
       }
     }
