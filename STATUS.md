@@ -99,6 +99,30 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   bus/shuttle/parked car/stall against the miniature district;
   tsc clean, 35/35 tests.
 
+### Traffic — back to main-branch behavior (user decision: "give up bumping")
+- Half-size streets + real-size vehicles made the old pass-through-crossings
+  look like clipping, so this branch grew a full avoidance brain (priority
+  yielding tram > bus > car > scooter, player yield, deadlock escalation +
+  reversing, a no-progress re-place valve, and finally mass-weighted bump
+  physics, tram 30 / bus 10 / car 1 / scooter 0.25). Every fix traded one
+  failure mode for another: deep embeds became permanent side-by-side grinds,
+  yielding became gridlock, and the fleet spent more time braking than
+  driving.
+- **Reverted `src/traffic.ts` to the main-branch version** (plus the
+  milestone-U scaling adaptation: `laneOff *= WORLD.scale`, two-car route
+  threshold `150 * WORLD.scale`): vehicles drive their own route ranges and
+  never brake for each other — crossings pass through, exactly like the live
+  game. Gone with it: the Flygbussen 5 s boarding dwell, player/scooter
+  yielding, reversing and the bump physics.
+- **Kept from the cleanup pass** (`world.ts`, `config.ts`): the Gothia podium
+  box that swallowed the streets between the towers is gone (roof caps stay),
+  parked cars are placed in a second pass and only kept where the full body
+  clears every car/bus/tram corridor, and the scooter fleet is 12 → 8 so the
+  narrow shared OSM streets stay readable.
+- Verified: tsc clean, 35/35 tests; 30 s browser sim — fleet 2 tram + 2 bus +
+  8 car + 8 scooter, Flygbussen live, ≥ 95 % of route vehicles moving in every
+  1 s sample, no NaN poses, scene renders at 60 fps.
+
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 
 ### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)

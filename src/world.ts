@@ -508,27 +508,18 @@ export function buildWorld(scene: THREE.Scene): World {
     colliders.push(makeAABB(bb.cx, bb.cz, bb.maxX - bb.minX, bb.maxZ - bb.minZ, h));
   }
 
-  // Gothia podium: low glass/concrete base connecting the three towers
+  // Gothia tower roof caps. The wide glass podium base that used to connect
+  // the towers was one big box swallowing the streets between them (traffic
+  // drove straight through it) — the towers are full-height glass extrusions
+  // already, so the plaza between them stays open.
   const towers = buildings.filter((b) => b.name && towerNames.has(b.name));
-  if (towers.length) {
-    const all = towers.flatMap((t) => t.pts);
-    const bb = bbox(all);
-    const pw = bb.maxX - bb.minX + 14 * S, pd = bb.maxZ - bb.minZ + 26 * S;
-    const px = bb.cx + 4 * S, pz = bb.cz + 8 * S;
-    const pod = new THREE.Mesh(new THREE.BoxGeometry(pw, 13 * S, pd), towerMat);
-    pod.position.set(px, 6.5 * S, pz);
-    pod.castShadow = true; pod.receiveShadow = true;
-    root.add(pod);
-    colliders.push(makeAABB(px, pz, pw, pd, 13 * S));
-    // roof mechanical caps on the towers
-    for (const t of towers) {
-      const tb = bbox(t.pts);
-      const th = Math.min(100, Math.max(3, t.height ?? (t.levels ? t.levels * 3.1 : 80))) * S;
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(10 * S, 3 * S, 8 * S), M.metal);
-      cap.position.set(tb.cx, th + 1.5 * S, tb.cz);
-      cap.castShadow = true;
-      root.add(cap);
-    }
+  for (const t of towers) {
+    const tb = bbox(t.pts);
+    const th = Math.min(100, Math.max(3, t.height ?? (t.levels ? t.levels * 3.1 : 80))) * S;
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(10 * S, 3 * S, 8 * S), M.metal);
+    cap.position.set(tb.cx, th + 1.5 * S, tb.cz);
+    cap.castShadow = true;
+    root.add(cap);
   }
 
   facadeGeos.forEach((geos, i) => addMesh(mergeGeometries(geos, false), facadeMats[i], true));
@@ -545,6 +536,11 @@ export function buildWorld(scene: THREE.Scene): World {
       }
     }
     return false;
+  };
+  const distSeg = (px: number, pz: number, ax: number, az: number, bx: number, bz: number): number => {
+    const dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1)));
+    return Math.hypot(px - (ax + t * dx), pz - (az + t * dz));
   };
   const inBuilding = (x: number, z: number): boolean => {
     for (const b of buildings) {
@@ -627,13 +623,10 @@ export function buildWorld(scene: THREE.Scene): World {
 
   // --- parked cars along the streets -----------------------------------------------------
   const carColors = [0x8a2f2f, 0x2f4a8a, 0x9aa0a6, 0x2f6a4a, 0xd8c860, 0x33363b, 0xc8c8c8];
-  const carBodyGeos = carColors.map(() => [] as THREE.BufferGeometry[]);
-  const carDarkGeos: THREE.BufferGeometry[] = [];
-  const bodyGeo = new THREE.BoxGeometry(4.4, 1.0, 1.8);
-  const cabGeo = new THREE.BoxGeometry(2.3, 0.62, 1.66);
-  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 8);
-  wheelGeo.rotateX(Math.PI / 2);
-  let carIdx = 0;
+  // Candidate spots along the curbs first; the cars themselves are built
+  // once the traffic routes are known (below), so no body can end up
+  // standing in a driving lane.
+  const parkSpots: { x: number; z: number; ry: number }[] = [];
   for (const r of roads) {
     if (!['secondary', 'tertiary', 'residential', 'service'].includes(r.highway)) continue;
     const hw = (ROAD_W[r.highway] ?? 7) / 2;
@@ -644,34 +637,17 @@ export function buildWorld(scene: THREE.Scene): World {
       if (k % 2) continue;
       const side = k % 4 === 1 ? 1 : -1;
       const nx = -s.dz * side, nz = s.dx * side;
-      const x = s.x + nx * (hw - 1.05), z = s.z + nz * (hw - 1.05);
-      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) || nearRoad(x, z, -1.2)) continue;
-      const ry = Math.atan2(s.dx, s.dz) + (k % 8 < 4 ? 0 : Math.PI);
-      const rot = new THREE.Matrix4().makeRotationY(ry);
-      const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
-        const m = rot.clone();
-        m.setPosition(x + ox * Math.cos(ry) + oz * Math.sin(ry), oy, z - ox * Math.sin(ry) + oz * Math.cos(ry));
-        return g.clone().applyMatrix4(m);
-      };
-      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72, 0));
-      carDarkGeos.push(place(cabGeo, -0.15, 1.5, 0));
-      for (const [wx, wz] of [[1.45, 0.82], [1.45, -0.82], [-1.45, 0.82], [-1.45, -0.82]] as const) {
-        carDarkGeos.push(place(wheelGeo, wx, 0.33, wz));
-      }
-      const c = Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8;
-      const sn = Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8;
-      const carCol = makeAABB(x, z, c, sn, 1.7);
-      colliders.push(carCol);
-      rideable(carCol, 1.55); // ride the roof — requires a jump
-      carIdx++;
+      // tuck them against the curb: the widest driving corridor reaches 2.85 m
+      // from the centreline (tram lane + width), so a parked car at 3.9 m
+      // (flank at 3.0) clears it by 0.15
+      const off = Math.max(hw - 1.05, 3.9);
+      const x = s.x + nx * off, z = s.z + nz * off;
+      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) ||
+        inBuilding(x + nx * 0.95, z + nz * 0.95) ||
+        parkSpots.some((p) => Math.hypot(p.x - x, p.z - z) < 5.2)) continue;
+      parkSpots.push({ x, z, ry: Math.atan2(s.dx, s.dz) + (k % 8 < 4 ? 0 : Math.PI) });
     }
   }
-  carBodyGeos.forEach((geos, i) => {
-    if (!geos.length) return;
-    addMesh(mergeGeometries(geos, false),
-      new THREE.MeshStandardMaterial({ color: carColors[i], metalness: 0.55, roughness: 0.35 }), true);
-  });
-  addMesh(mergeGeometries(carDarkGeos, false), M.dark, true);
 
   // --- benches, bins, barriers -------------------------------------------------------------
   const benchGeos: THREE.BufferGeometry[] = [];
@@ -822,6 +798,64 @@ export function buildWorld(scene: THREE.Scene): World {
       return near / pts.length < 0.3;
     })
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 6);
+
+  // --- parked cars: build the spots that clear every traffic corridor --------
+  // A real-size body (4.4 × 1.8 m) may not reach into any driving lane:
+  // cars sweep 2.05 m from a centreline, buses 2.7 m, trams 2.85 m (lane + width).
+  {
+    const corridors: { pts: Vec2[][]; reach: number }[] = [
+      { pts: carRoutes, reach: 2.05 }, { pts: busRoutes, reach: 2.7 }, { pts: tramRoutes, reach: 2.85 },
+    ];
+    const clearOfTraffic = (x: number, z: number, ry: number): boolean => {
+      const cl = Math.cos(ry), sl = Math.sin(ry);
+      for (const [lx, lz] of [[2.2, 0.9], [2.2, -0.9], [-2.2, 0.9], [-2.2, -0.9],
+        [2.2, 0], [-2.2, 0], [0, 0.9], [0, -0.9]] as const) {
+        const px = x + lx * cl + lz * sl, pz = z - lx * sl + lz * cl;
+        for (const { pts, reach } of corridors) {
+          for (const rp of pts) {
+            for (let i = 0; i + 1 < rp.length; i++) {
+              if (distSeg(px, pz, rp[i].x, rp[i].z, rp[i + 1].x, rp[i + 1].z) < reach + 0.15) return false;
+            }
+          }
+        }
+      }
+      return true;
+    };
+    const carBodyGeos = carColors.map(() => [] as THREE.BufferGeometry[]);
+    const carDarkGeos: THREE.BufferGeometry[] = [];
+    const bodyGeo = new THREE.BoxGeometry(4.4, 1.0, 1.8);
+    const cabGeo = new THREE.BoxGeometry(2.3, 0.62, 1.66);
+    const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 8);
+    wheelGeo.rotateX(Math.PI / 2);
+    let carIdx = 0;
+    for (const sp of parkSpots) {
+      if (!clearOfTraffic(sp.x, sp.z, sp.ry)) continue;
+      const { x, z, ry } = sp;
+      const rot = new THREE.Matrix4().makeRotationY(ry);
+      const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
+        const m = rot.clone();
+        m.setPosition(x + ox * Math.cos(ry) + oz * Math.sin(ry), oy, z - ox * Math.sin(ry) + oz * Math.cos(ry));
+        return g.clone().applyMatrix4(m);
+      };
+      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72, 0));
+      carDarkGeos.push(place(cabGeo, -0.15, 1.5, 0));
+      for (const [wx, wz] of [[1.45, 0.82], [1.45, -0.82], [-1.45, 0.82], [-1.45, -0.82]] as const) {
+        carDarkGeos.push(place(wheelGeo, wx, 0.33, wz));
+      }
+      const c = Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8;
+      const sn = Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8;
+      const carCol = makeAABB(x, z, c, sn, 1.7);
+      colliders.push(carCol);
+      rideable(carCol, 1.55); // ride the roof — requires a jump
+      carIdx++;
+    }
+    carBodyGeos.forEach((geos, i) => {
+      if (!geos.length) return;
+      addMesh(mergeGeometries(geos, false),
+        new THREE.MeshStandardMaterial({ color: carColors[i], metalness: 0.55, roughness: 0.35 }), true);
+    });
+    addMesh(mergeGeometries(carDarkGeos, false), M.dark, true);
+  }
 
   // --- player start: on the street by the crossing, facing the towers -------------------------
   // Same physical spot as before, expressed in the re-centred miniature coordinates.

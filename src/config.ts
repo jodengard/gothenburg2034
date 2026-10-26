@@ -32,7 +32,7 @@ export const SCOOTER = {
   dropDespawn: 30, // seconds a riderless scooter waits before being "towd away"
   dismountDespawn: 12,
   deadDespawn: 5, // battery-dead husk removal
-  fleet: 12, // scooters kept on the streets
+  fleet: 8, // scooters kept on the streets (shared OSM streets gridlock beyond this)
   respawnCd: 6,
   // --- trick riding: jump onto benches/car roofs and spin in the air ---
   jumpVel: 7.6, // m/s — apex ~1.6 m, clears a car roof
