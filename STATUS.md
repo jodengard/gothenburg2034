@@ -142,6 +142,18 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   traffic kills, wrecks capped at 8, no NaN, 144 fps; screenshot shows the
   yellow VOI decks + horde at Korsvägen; tsc clean, 35/35 tests.
 
+### Follow-up — friendly coach, meaner saw (`traffic.ts`, `config.ts`, `audio.ts`)
+- **The Flygbussen never hurts you**: it's the boarding bus, so the player
+  contact check skips it entirely — no damage, no knockback, no crash sound
+  (it still mows zombies; every other vehicle still runs you over).
+- **Chainsaw huge buff**: 90 → **260 dps** (31.2 per 0.12 s tick, ~3×) — a
+  base zombie dies in two ticks, max-threat in two as well.
+- **Chainsaw LOUDER**: buzz gain 0.18 → 0.5, plus a detuned second sawtooth
+  and a high noise rasp layered on the cut, and a beefier stop growl.
+- Verified in browser: standing inside the Flygbussen for 2 s = 0 damage
+  calls; inside a normal bus = one 45 hit (cooldown respected); served
+  config reads `damage: 260` (31.2/tick); tsc clean, 35/35 tests.
+
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 
 ### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)

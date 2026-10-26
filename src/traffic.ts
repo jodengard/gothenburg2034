@@ -769,8 +769,9 @@ export class Traffic {
       const ax = t0.x + rx * lane, az = t0.z + rz * lane;
       const bx = t1.x + rx * lane, bz = t1.z + rz * lane;
 
-      // the player has to avoid the traffic
-      if (v.hitCd <= 0 &&
+      // the player has to avoid the traffic — except the Flygbussen: the
+      // airport coach is a friend, it never hurts or shoves you (E boards it)
+      if (!v.flygbuss && v.hitCd <= 0 &&
         distPointSeg(player.pos.x, player.pos.z, ax, az, bx, bz) < spec.halfW + PLAYER.radius + 0.25) {
         v.hitCd = 1.4;
         if (onPlayerHit(spec.playerDmg, c.x, c.z, spec.shake)) {

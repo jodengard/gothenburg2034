@@ -239,7 +239,11 @@ export const sfx = {
     playNoise(0.1, 1500, 1.5, 0.4);
   },
   chainsaw(on: boolean): void {
-    if (on) playTone(95, 0.15, 0.18, 'sawtooth', 20);
-    else playTone(80, 0.3, 0.15, 'sawtooth', -40);
+    // LOUD: detuned two-stroke growl plus the chain rasp cutting air
+    if (on) {
+      playTone(95, 0.15, 0.5, 'sawtooth', 20);
+      playTone(143, 0.15, 0.22, 'sawtooth', 26);
+      playNoise(0.12, 2600, 4, 0.3);
+    } else playTone(80, 0.3, 0.42, 'sawtooth', -40);
   },
 };

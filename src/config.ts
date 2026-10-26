@@ -169,7 +169,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     cooldown: 0.45, arcDeg: 80, dropWeightByThreat: [1, 2, 3, 2, 2], color: 0xcfd8dc,
   },
   chainsaw: {
-    id: 'chainsaw', name: 'Chainsaw', kind: 'chain', damage: 90, range: 2.3,
+    id: 'chainsaw', name: 'Chainsaw', kind: 'chain', damage: 260, range: 2.3,
     cooldown: 0.12, fuelUse: 22, chainTick: 0.12,
     dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xd84315,
   },
