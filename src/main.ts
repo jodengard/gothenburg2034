@@ -24,7 +24,7 @@ import { rayAABB, invalidateColliderGrid } from './collision';
 import { TouchControls, isTouchDevice } from './touch';
 import { buildLisebergskanin } from './rabbit';
 import { BunnyHelpers } from './bunny';
-import { buildShanghaiWorld, SH_ISLAND, SH_SCALE } from './shanghai';
+import { buildShanghaiWorld, SH_ISLAND } from './shanghai';
 import { buildNoodleDrop } from './noodle';
 
 // --- Menu bootstrap ----------------------------------------------------------
@@ -400,7 +400,7 @@ function finishCooking(): void {
   noodle.cooking = false;
   n.setCooking(null);
   const g = buildNoodleDrop();
-  g.position.set(n.bar.x, 0.95 * SH_SCALE, n.bar.z); // sits on the miniature counter
+  g.position.set(n.bar.x, 0.95, n.bar.z); // sits on the counter
   scene.add(g);
   noodleDrop = { mesh: g, x: n.bar.x, z: n.bar.z, t: 0 };
   sfx.bell();
@@ -981,7 +981,7 @@ function step(dt: number): void {
   if (noodleDrop) {
     noodleDrop.t += dt;
     noodleDrop.mesh.rotation.y += dt * 1.6;
-    noodleDrop.mesh.position.y = 0.95 * SH_SCALE + Math.sin(state.time * 3) * 0.05;
+    noodleDrop.mesh.position.y = 0.95 + Math.sin(state.time * 3) * 0.05;
     if (noodleDrop.t > 0.5 && Math.hypot(noodleDrop.x - player.pos.x, noodleDrop.z - player.pos.z) < 1.5) {
       clearNoodleDrop(); // slurped on the spot
       player.health = PLAYER.maxHealth;

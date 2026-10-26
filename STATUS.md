@@ -91,10 +91,13 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   roof) and the Shanghai shuttle to real size — only lane offsets, spawn
   positions and the two-car route threshold (`150 * WORLD.scale`) follow the
   miniature streets.
+- **The noodle stall too**: no group scaling, real colliders and bar offset
+  (`1214.55, 8`), bowl drop back at the real `0.95` counter height.
 - Re-verified: all 24 Gothenburg + 5 Shanghai vehicles at scale 1, parked-car
   colliders real size, tram hit-and-kill still works (real-size hitbox),
-  screenshots show full-size bus/shuttle/parked car against the miniature
-  district; tsc clean, 35/35 tests.
+  stall cook → drop at 0.95 m → HP 50 → 100, screenshots show full-size
+  bus/shuttle/parked car/stall against the miniature district;
+  tsc clean, 35/35 tests.
 
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 

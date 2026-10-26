@@ -271,17 +271,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
 
   // --- noodle stall west of the Expo Axis: 牛肉麵 and a resident bunny ----------------
   const stallX = X(26), stallZ = 16 * S;
-  const noodle = buildNoodleStall(stallX, stallZ, Math.PI / 2);
-  noodle.group.scale.setScalar(S); // the whole stall shrinks with the arena
-  for (const c of noodle.colliders) {
-    // re-fit the world AABBs around the scaled stall
-    const cx = (c.minX + c.maxX) / 2, cz = (c.minZ + c.maxZ) / 2;
-    const hw = (c.maxX - c.minX) / 2 * S, hd = (c.maxZ - c.minZ) / 2 * S;
-    c.minX = cx - hw; c.maxX = cx + hw; c.minZ = cz - hd; c.maxZ = cz + hd;
-    c.height *= S;
-  }
-  noodle.bar.x = stallX + (noodle.bar.x - stallX) * S;
-  noodle.bar.z = stallZ + (noodle.bar.z - stallZ) * S;
+  const noodle = buildNoodleStall(stallX, stallZ, Math.PI / 2); // real size: you eat at it
   scene.add(noodle.group);
   colliders.push(...noodle.colliders);
 
