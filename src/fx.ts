@@ -108,6 +108,24 @@ export class Fx {
     }
   }
 
+  /** Chainsaw cut: heavy two-tone gore spray thrown down the blade line.
+   * The saw shreds instead of slicing, so every tick sprays double the
+   * blood of a knife hit — most of it flung FORWARD along the cut. Sized
+   * so sustained cutting of a small crowd stays under the particle cap. */
+  sawSpray(x: number, y: number, z: number, dirX = 0, dirZ = 0): void {
+    const dark = new THREE.Color(0x8a1518);
+    const bright = new THREE.Color(0xa8202a); // arterial mist
+    for (let i = 0; i < 20; i++) {
+      const fwd = 3.5 + Math.random() * 4.5;
+      const spread = (Math.random() - 0.5) * 2.4; // fan across the blade line
+      this.emit(
+        x, y + (Math.random() - 0.5) * 0.7, z,
+        dirX * fwd - dirZ * spread, 1.2 + Math.random() * 3, dirZ * fwd + dirX * spread,
+        0.4 + Math.random() * 0.35, Math.random() < 0.35 ? bright : dark,
+      );
+    }
+  }
+
   sparks(x: number, y: number, z: number): void {
     const c = new THREE.Color(0xffcc55);
     for (let i = 0; i < 8; i++) {

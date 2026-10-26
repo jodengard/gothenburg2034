@@ -154,6 +154,20 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   calls; inside a normal bus = one 45 hit (cooldown respected); served
   config reads `damage: 260` (31.2/tick); tsc clean, 35/35 tests.
 
+### Extra chainsaw blood (`fx.ts`, `main.ts`)
+- New `fx.sawSpray`: every chainsaw hit tick now throws a heavy two-tone
+  gore spray (20 particles vs the knife's 10, dark + arterial red) flung
+  mostly FORWARD down the blade line instead of a generic puff.
+- Plus a 5 % chance per hit tick of a full `fx.gore` chunk burst — now and
+  then the saw visibly chews up debris while cutting.
+- Sized for the particle pool: measured with real aging (the debug `step`
+  does not run `fx.update`, so the harness must call it manually) — peak
+  320/600 particles and 39/90 chunks while grinding three zombies, and
+  everything fades out cleanly afterwards; explosions and traffic-kill
+  blood keep their headroom.
+- Verified in browser: 69 sprays in 3 s = 3 zombies × 8.3 ticks/s, 3–6
+  chunk bursts, pool drains to idle after firing; tsc clean, 35/35 tests.
+
 ## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 
 ### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)

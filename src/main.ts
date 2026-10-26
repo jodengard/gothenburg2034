@@ -637,7 +637,8 @@ function fireWeapon(): void {
     const hits = zombies.meleeSweep(eye, player.flatDir, def.range, 0.5);
     for (const z of hits) {
       zombies.damage(z, def.damage * (def.chainTick ?? 0.12), dir.x * 2, dir.z * 2, { byPlayer: true });
-      fx.blood(z.pos.x, 1.1, z.pos.z, dir.x, dir.z);
+      fx.sawSpray(z.pos.x, 1.15, z.pos.z, dir.x, dir.z); // heavy gore every tick
+      if (Math.random() < 0.05) fx.gore(z.pos.x, 1.1, z.pos.z); // now and then it chews up chunks
       hud.hitMarker();
     }
     return;
