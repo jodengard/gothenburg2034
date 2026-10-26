@@ -127,13 +127,24 @@ export function buildAtmosphere(scene: THREE.Scene, world: World, moonDir: THREE
   }
 
   // --- embers / fireflies -----------------------------------------------------------
+  // Scatter over THIS arena: derive its centre + reach from the collider bounds
+  // (the invisible boundary walls), so the Shanghai island gets its own field.
   const EMB = 70;
+  let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9;
+  for (const c of world.colliders) {
+    if (c.minX < bx0) bx0 = c.minX;
+    if (c.maxX > bx1) bx1 = c.maxX;
+    if (c.minZ < bz0) bz0 = c.minZ;
+    if (c.maxZ > bz1) bz1 = c.maxZ;
+  }
+  const ecx = (bx0 + bx1) / 2, ecz = (bz0 + bz1) / 2;
+  const espread = Math.min(bx1 - ecx, bz1 - ecz) * 0.94;
   const ePos = new Float32Array(EMB * 3);
   const eSeed = new Float32Array(EMB);
   for (let i = 0; i < EMB; i++) {
-    ePos[i * 3] = (rng() * 2 - 1) * 122;
+    ePos[i * 3] = ecx + (rng() * 2 - 1) * espread;
     ePos[i * 3 + 1] = 0.4 + rng() * 7;
-    ePos[i * 3 + 2] = (rng() * 2 - 1) * 122;
+    ePos[i * 3 + 2] = ecz + (rng() * 2 - 1) * espread;
     eSeed[i] = rng() * Math.PI * 2;
   }
   const eGeo = new THREE.BufferGeometry();

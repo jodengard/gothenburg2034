@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 32 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 35 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,67 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
+## Current milestone: U (optimizations branch — 1:2 maps + collider grid + chainsaw buff) — verified
+
+### Changed — both arenas are now 1:2 miniatures (closer, denser, cheaper)
+- `WORLD.scale = 0.5`, `halfSize` 130 → **65 m**: every OSM coordinate, road width,
+  building, parked car, lamp, tram rail and landmark in Gothenburg is multiplied by
+  `S` at build time (`src/world.ts`); `landmarks.ts` / `highway.ts` root-scale or
+  shift with the same factor. Shanghai mirrors it: exported `SH_SCALE = 0.5`,
+  `SH_HALF = 40`, OSM points scaled at load, hand-placed props through `X()`
+  (original units) vs `Xw()` (already-scaled) so nothing double-scales (`src/shanghai.ts`).
+- **Player-scale objects stay real size**: benches, barriers, throwables, scooters,
+  pickups, trees, pole/shelter heights, the noodle stall bar and the bowl drop
+  (`0.95 * SH_SCALE` counter height). Traffic vehicles scale ×0.5 (scooters keep
+  real size); speeds and damage unchanged.
+- Threat spawn ring tightened to 18–30 m; atmosphere embers now scatter over
+  **each arena's own bounds** (derived from the boundary-wall colliders), so the
+  Shanghai island finally gets its own fireflies (`src/atmos.ts`).
+
+### Added — `ColliderGrid` for line-of-sight (`src/collision.ts`)
+- 12 m uniform grid (Map of cells, Amanatides–Woo DDA walk, per-query
+  generation-stamp dedupe). `segmentBlocked` uses it once a world has ≥ 96
+  colliders, falls back to the linear scan below that; lazy rebuild on array
+  identity change + `invalidateColliderGrid()` for the in-place arena swap
+  (called from `setActiveArena`).
+- This was the dominant CPU cost: 7 LOS probes × ~60 zombies × every collider
+  per AI tick. **3 new unit tests** prove grid ≡ linear scan and that
+  invalidate picks up in-place mutation (35/35 green).
+
+### Changed — chainsaw (`src/config.ts`, `fx.ts`, `main.ts`)
+- Damage **55 → 90 dps** (~1.6×; measured 86.4 dps live through cooldown phase).
+- New `fx.smoke()`: buoyant gray puffs (negative gravity, 0.6–1.1 s life) — the
+  saw now trails a plume from the bar while cutting (3 particles per chain tick).
+
+### Added — 10 s arrival calm in Shanghai (`main.ts`)
+- `spawnGrace = 10` set on the swap into Shanghai; the director's spawn-pack
+  callback stays silent until it runs out (threat clock keeps ticking).
+  Verified: **0 zombies after 10 s standing still**, then the threat-6 horde
+  (41 zombies) arrives within the next 10 s.
+
+### Perf evidence (same 50-zombie ring benchmark, 600 sim steps)
+| build | step ms/frame | zombies alive | colliders |
+|---|---|---|---|
+| old live bundle | 0.418 | 39 | 129 |
+| this branch | **0.313** | 50 | 119 |
+
+≈ **40 % cheaper per zombie** (grid + tighter world). Renderer now requests
+`powerPreference: 'high-performance'`.
+
+### Verified (browser sim, 0 console errors)
+- Gothenburg boots scaled: start (−24.7, 40.9), 119 colliders, 2 tram + 2 bus +
+  6 car routes chained, 22 traffic vehicles all on-map, 10 non-scooter vehicles
+  at scale 0.5; walking 3 s moves 9.1 m, stays in bounds.
+- Shanghai swap lands on miniature coords: start (1226, 17), stall bar
+  (1213.78, 8), return shuttle (1215, 26), spawn not inside any collider,
+  bus + scooters present; cook → bowl drop at 0.475 m counter height,
+  collect restores HP 50 → 100.
+- Screenshots: miniature Korsvägen with looming Gothia Towers, dusk crossing
+  with Carlanderska on its hill, Expo boulevard with cone + pavilion, the
+  scaled stall with chef bunny, quay tower row, and the chainsaw smoke plume.
+- tsc clean, 35/35 tests, build ok.
+
+## Previous milestone: T (chef bunny cooks the noodles + Shanghai MIDI music) — verified
 
 ### Changed — the bunny is a chef now (`src/noodle.ts`, `main.ts`)
 - The stall bunny wears a **tall white chef's hat** (band + puff + crown,

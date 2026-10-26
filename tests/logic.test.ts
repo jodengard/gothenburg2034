@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { RNG } from '../src/rng';
-import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash } from '../src/collision';
+import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash, invalidateColliderGrid } from '../src/collision';
 import { WeaponState, rollDrop } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, Pack } from '../src/pack';
@@ -73,6 +73,49 @@ describe('collision', () => {
     expect(out).toContain(a);
     expect(out).toContain(b);
     expect(out).not.toContain(far);
+  });
+});
+
+// --- ColliderGrid (segmentBlocked fast path) -----------------------------------
+describe('collider grid', () => {
+  // Build >96 colliders so segmentBlocked switches to the grid path.
+  function bigSet(): ReturnType<typeof makeAABB>[] {
+    const list = [makeAABB(0, 0, 4, 4)]; // the wall at the origin
+    for (let i = 0; i < 120; i++) {
+      const x = 40 + (i % 12) * 30, z = -200 + Math.floor(i / 12) * 30;
+      list.push(makeAABB(x, z, 6, 6));
+    }
+    return list;
+  }
+  const linear = (
+    o: { x: number; z: number }, d: { x: number; z: number }, m: number,
+    cs: ReturnType<typeof makeAABB>[],
+  ) => cs.some((c) => rayAABB(o, d, m, c) !== null);
+
+  it('grid agrees with a linear scan across many rays', () => {
+    const cs = bigSet();
+    invalidateColliderGrid();
+    for (let a = 0; a < 64; a++) {
+      const ang = (a / 64) * Math.PI * 2;
+      const dir = { x: Math.cos(ang), z: Math.sin(ang) };
+      const o = { x: -10, z: -3 };
+      expect(segmentBlocked(o, dir, 300, cs)).toBe(linear(o, dir, 300, cs));
+    }
+  });
+  it('still detects the near wall through the grid', () => {
+    const cs = bigSet();
+    invalidateColliderGrid();
+    expect(segmentBlocked({ x: -10, z: 0 }, { x: 1, z: 0 }, 20, cs)).toBe(true);
+    expect(segmentBlocked({ x: -10, z: 10 }, { x: 1, z: 0 }, 20, cs)).toBe(false);
+  });
+  it('picks up in-place mutation after invalidateColliderGrid', () => {
+    const cs = bigSet();
+    invalidateColliderGrid();
+    // clear path before the wall moves
+    expect(segmentBlocked({ x: 20, z: 0 }, { x: 1, z: 0 }, 10, cs)).toBe(false);
+    cs[0] = makeAABB(25, 0, 4, 4); // move the wall into the path
+    invalidateColliderGrid();
+    expect(segmentBlocked({ x: 20, z: 0 }, { x: 1, z: 0 }, 10, cs)).toBe(true);
   });
 });
 

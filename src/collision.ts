@@ -50,6 +50,85 @@ export function resolveCircleAABB(a: AABB, p: Vec2, r: number): Vec2 {
 }
 
 /**
+ * Uniform grid index over a static collider set, so a segment only tests the
+ * boxes in the cells it actually crosses (Amanatides & Woo DDA). Rebuilt
+ * lazily when the collider array identity changes; call
+ * invalidateColliderGrid() after mutating the array in place (arena swap).
+ */
+class ColliderGrid {
+  private cells = new Map<number, number[]>();
+  private stamp: Int32Array;
+  private gen = 0;
+  private static SIZE = 12;
+
+  constructor(private readonly colliders: readonly AABB[]) {
+    this.stamp = new Int32Array(colliders.length);
+    const S = ColliderGrid.SIZE;
+    for (let i = 0; i < colliders.length; i++) {
+      const c = colliders[i];
+      const x0 = Math.floor(c.minX / S), x1 = Math.floor(c.maxX / S);
+      const z0 = Math.floor(c.minZ / S), z1 = Math.floor(c.maxZ / S);
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let cz = z0; cz <= z1; cz++) {
+          const k = ColliderGrid.key(cx, cz);
+          let arr = this.cells.get(k);
+          if (!arr) { arr = []; this.cells.set(k, arr); }
+          arr.push(i);
+        }
+      }
+    }
+  }
+
+  private static key(cx: number, cz: number): number {
+    return (cx + 4096) * 8192 + (cz + 4096);
+  }
+
+  blocked(o: Vec2, dir: Vec2, maxDist: number): boolean {
+    const S = ColliderGrid.SIZE;
+    this.gen++;
+    const g = this.gen;
+    let cx = Math.floor(o.x / S), cz = Math.floor(o.z / S);
+    const dx = dir.x * maxDist, dz = dir.z * maxDist; // full segment vector
+    const stepX = dx > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
+    const adx = Math.abs(dx), adz = Math.abs(dz);
+    const tDeltaX = adx === 0 ? Infinity : S / adx;
+    const tDeltaZ = adz === 0 ? Infinity : S / adz;
+    let tMaxX = adx === 0 ? Infinity
+      : (dx > 0 ? (cx + 1) * S - o.x : o.x - cx * S) / adx;
+    let tMaxZ = adz === 0 ? Infinity
+      : (dz > 0 ? (cz + 1) * S - o.z : o.z - cz * S) / adz;
+    for (let guard = 0; guard < 4096; guard++) {
+      const arr = this.cells.get(ColliderGrid.key(cx, cz));
+      if (arr) {
+        for (let n = 0; n < arr.length; n++) {
+          const i = arr[n];
+          if (this.stamp[i] === g) continue;
+          this.stamp[i] = g;
+          if (rayAABB(o, dir, maxDist, this.colliders[i]) !== null) return true;
+        }
+      }
+      if (tMaxX < tMaxZ) {
+        if (tMaxX > 1) break;
+        tMaxX += tDeltaX; cx += stepX;
+      } else {
+        if (tMaxZ > 1) break;
+        tMaxZ += tDeltaZ; cz += stepZ;
+      }
+    }
+    return false;
+  }
+}
+
+let segGrid: ColliderGrid | null = null;
+let segGridSrc: readonly AABB[] | null = null;
+
+/** Drop the cached segment grid (colliders were mutated in place). */
+export function invalidateColliderGrid(): void {
+  segGrid = null;
+  segGridSrc = null;
+}
+
+/**
  * Segment vs AABB (2D slab method). Returns distance along segment (0..1 scaled to length)
  * of the entry point, or null if no hit within the segment.
  */
@@ -85,10 +164,18 @@ export function rayAABB(o: Vec2, dir: Vec2, maxDist: number, a: AABB): number | 
 
 /** True if segment o->o+dir*maxDist is blocked by any collider (line of sight = false). */
 export function segmentBlocked(o: Vec2, dir: Vec2, maxDist: number, colliders: readonly AABB[]): boolean {
-  for (const c of colliders) {
-    if (rayAABB(o, dir, maxDist, c) !== null) return true;
+  // Small sets (unit tests, mini-arenas) are faster to scan linearly.
+  if (colliders.length < 96) {
+    for (const c of colliders) {
+      if (rayAABB(o, dir, maxDist, c) !== null) return true;
+    }
+    return false;
   }
-  return false;
+  if (!segGrid || segGridSrc !== colliders) {
+    segGrid = new ColliderGrid(colliders);
+    segGridSrc = colliders;
+  }
+  return segGrid.blocked(o, dir, maxDist);
 }
 
 /**

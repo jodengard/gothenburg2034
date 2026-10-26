@@ -114,10 +114,10 @@ export const THREAT = {
     [5, 7],
     [6, 8],
   ] as const,
-  // Spawn ring distance from player (meters). Sized for the 260 m arena so
+  // Spawn ring distance from player (meters). Sized for the 130 m arena so
   // spawns stay inside the bounds even when the player hugs an edge.
-  spawnMinDist: 36,
-  spawnMaxDist: 60,
+  spawnMinDist: 18,
+  spawnMaxDist: 30,
   // A spawn is rejected if it is inside this view cone (dot product) AND has LOS.
   spawnViewDot: 0.82,
   throwersEnabledFromLevel: 3,
@@ -169,7 +169,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     cooldown: 0.45, arcDeg: 80, dropWeightByThreat: [1, 2, 3, 2, 2], color: 0xcfd8dc,
   },
   chainsaw: {
-    id: 'chainsaw', name: 'Chainsaw', kind: 'chain', damage: 55, range: 2.3,
+    id: 'chainsaw', name: 'Chainsaw', kind: 'chain', damage: 90, range: 2.3,
     cooldown: 0.12, fuelUse: 22, chainTick: 0.12,
     dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xd84315,
   },
@@ -208,13 +208,15 @@ export const THROWABLE = {
 
 export const WORLD = {
   // Arena re-centred on the real district core: the strip between the
-  // Korsvägen crossing (west) and the Gothia Towers (east). 260x260 m keeps
-  // the crossing, all three towers, the tram network and the arterial grid
-  // while removing the empty outskirts of the old 370 m box.
+  // Korsvägen crossing (west) and the Gothia Towers (east).
   // (centerX/centerZ = offset of the arena centre from the OSM projection centre)
   centerX: 48,
   centerZ: -8,
-  halfSize: 130,
+  // 1:2 miniature: every OSM coordinate, road width, building and prop is
+  // multiplied by this, so the whole district sits in a 130x130 m box — the
+  // same real geography, twice as dense. Landmarks and traffic scale with it.
+  scale: 0.5,
+  halfSize: 65,
   // Dusk: a lighter mauve-twilight haze so the horizon reads as fading daylight
   // instead of pitch black; the Liseberg wheel still looms out of it and
   // Carlanderska stays fog-free.

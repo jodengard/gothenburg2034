@@ -67,15 +67,17 @@ interface MapData {
   trees: TreePt[]; parks: ParkWay[];
 }
 // Shift all OSM geometry so the arena centre sits on the district core
-// (Korsvägen crossing ↔ Gothia Towers strip — see WORLD.centerX/centerZ).
+// (Korsvägen crossing ↔ Gothia Towers strip — see WORLD.centerX/centerZ),
+// then scale it into the 1:2 miniature (WORLD.scale).
 const raw = mapdataRaw as unknown as MapData;
-const shiftPt = (p: Pt): Pt => ({ x: p.x - WORLD.centerX, z: p.z - WORLD.centerZ });
+const S = WORLD.scale;
+const shiftPt = (p: Pt): Pt => ({ x: (p.x - WORLD.centerX) * S, z: (p.z - WORLD.centerZ) * S });
 const mapdata: MapData = {
   roads: raw.roads.map((r) => ({ ...r, pts: r.pts.map(shiftPt) })),
   trams: raw.trams.map((t) => ({ ...t, pts: t.pts.map(shiftPt) })),
   buildings: raw.buildings.map((b) => ({ ...b, pts: b.pts.map(shiftPt) })),
   parks: raw.parks.map((p) => ({ ...p, pts: p.pts.map(shiftPt) })),
-  trees: raw.trees.map((t) => ({ ...t, x: t.x - WORLD.centerX, z: t.z - WORLD.centerZ })),
+  trees: raw.trees.map((t) => ({ x: (t.x - WORLD.centerX) * S, z: (t.z - WORLD.centerZ) * S, r: t.r })),
 };
 
 // --- procedural textures -----------------------------------------------------
@@ -209,6 +211,8 @@ const ROAD_W: Record<string, number> = {
   secondary: 13, tertiary: 11, unclassified: 9, residential: 7.5,
   service: 5, pedestrian: 4, footway: 2.6, cycleway: 2.2, path: 2, steps: 2.4,
 };
+// Real street widths, halved together with the map coordinates.
+for (const k in ROAD_W) ROAD_W[k] *= S;
 
 function polyInBox(pts: Pt[], m: number): boolean {
   return pts.some((p) => Math.abs(p.x) <= m && Math.abs(p.z) <= m);
@@ -415,14 +419,14 @@ export function buildWorld(scene: THREE.Scene): World {
     } else {
       asphalt.add(pts, hw, -hw, 0.02);
     }
-    if (w >= 7) {
-      walkRibbon.add(pts, hw + 2.6, hw, 0.13);
-      walkRibbon.add(pts, -hw, -hw - 2.6, 0.13);
+    if (w >= 7 * S) {
+      walkRibbon.add(pts, hw + 2.6 * S, hw, 0.13);
+      walkRibbon.add(pts, -hw, -hw - 2.6 * S, 0.13);
     }
     if (r.highway === 'secondary' || r.highway === 'tertiary') {
       // dashed centre line
-      for (const s of walk(pts, 9)) {
-        const a = 2.6;
+      for (const s of walk(pts, 9 * S)) {
+        const a = 2.6 * S;
         markings.add(
           [{ x: s.x - s.dx * a, z: s.z - s.dz * a }, { x: s.x + s.dx * a, z: s.z + s.dz * a }],
           0.16, -0.16, 0.03,
@@ -438,9 +442,9 @@ export function buildWorld(scene: THREE.Scene): World {
   const trams = mapdata.trams.filter((t) => polyInBox(t.pts, H + 10));
   for (const t of trams) {
     const pts = clampPts(t.pts, H + 10);
-    tramBed.add(pts, 2.1, -2.1, 0.035);
-    railsL.add(pts, 0.79, 0.71, 0.09);
-    railsR.add(pts, -0.71, -0.79, 0.09);
+    tramBed.add(pts, 2.1 * S, -2.1 * S, 0.035);
+    railsL.add(pts, 0.79 * S, 0.71 * S, 0.09);
+    railsR.add(pts, -0.71 * S, -0.79 * S, 0.09);
   }
   addMesh(tramBed.build(), M.tramBed);
   addMesh(railsL.build(), M.rail);
@@ -453,7 +457,7 @@ export function buildWorld(scene: THREE.Scene): World {
   for (const t of trams) {
     for (let i = 0; i < t.pts.length - 1; i++) {
       const p = t.pts[i];
-      const d = Math.hypot(p.x + 66, p.z - 52); // near the Korsvägen crossing (re-centred coords)
+      const d = Math.hypot(p.x + 66 * S, p.z - 52 * S); // near the Korsvägen crossing (re-centred coords)
       if (d < best) {
         best = d; stop = { x: p.x, z: p.z };
         const q = t.pts[i + 1];
@@ -465,20 +469,20 @@ export function buildWorld(scene: THREE.Scene): World {
   if (stop) {
     const nx = -stopD.z, nz = stopD.x;
     for (const s of [-1, 1]) {
-      const px = stop.x + nx * s * 4.6, pz = stop.z + nz * s * 4.6;
-      const plat = new THREE.Mesh(new THREE.BoxGeometry(11, 0.28, 3), M.walk);
+      const px = stop.x + nx * s * 4.6 * S, pz = stop.z + nz * s * 4.6 * S;
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(11 * S, 0.28, 3 * S), M.walk);
       plat.position.set(px, 0.14, pz);
       plat.rotation.y = Math.atan2(stopD.x, stopD.z);
       plat.receiveShadow = true; plat.castShadow = true;
       root.add(plat);
-      colliders.push(makeAABB(px, pz, 11, 3, 0.28));
-      const gx = px + nx * s * 0.9, gz = pz + nz * s * 0.9;
-      const sh = new THREE.Mesh(new THREE.BoxGeometry(6, 2.3, 1.6), M.glass);
+      colliders.push(makeAABB(px, pz, 11 * S, 3 * S, 0.28));
+      const gx = px + nx * s * 0.9 * S, gz = pz + nz * s * 0.9 * S;
+      const sh = new THREE.Mesh(new THREE.BoxGeometry(6 * S, 2.3, 1.6 * S), M.glass);
       sh.position.set(gx, 1.29, gz);
       sh.rotation.y = plat.rotation.y;
       sh.castShadow = true;
       root.add(sh);
-      colliders.push(makeAABB(gx, gz, 6, 1.6, 2.4));
+      colliders.push(makeAABB(gx, gz, 6 * S, 1.6 * S, 2.4));
     }
   }
 
@@ -495,8 +499,8 @@ export function buildWorld(scene: THREE.Scene): World {
     const span = Math.max(bb.maxX - bb.minX, bb.maxZ - bb.minZ);
     const isTower = b.name != null && towerNames.has(b.name);
     let h = b.height ?? (b.levels ? b.levels * 3.1 : undefined);
-    if (h === undefined) h = span < 9 ? 4 : 14; // small huts vs 6-storey blocks
-    h = Math.min(100, Math.max(3, h));
+    if (h === undefined) h = span < 9 * S ? 4 : 14; // small huts vs 6-storey blocks
+    h = Math.min(100, Math.max(3, h)) * S; // clamp in real metres, then miniature
     const g = extrudeFootprint(pts, h);
     if (isTower) glassGeos.push(g);
     else facadeGeos[b.id % facadeMats.length].push(g);
@@ -509,19 +513,19 @@ export function buildWorld(scene: THREE.Scene): World {
   if (towers.length) {
     const all = towers.flatMap((t) => t.pts);
     const bb = bbox(all);
-    const pw = bb.maxX - bb.minX + 14, pd = bb.maxZ - bb.minZ + 26;
-    const px = bb.cx + 4, pz = bb.cz + 8;
-    const pod = new THREE.Mesh(new THREE.BoxGeometry(pw, 13, pd), towerMat);
-    pod.position.set(px, 6.5, pz);
+    const pw = bb.maxX - bb.minX + 14 * S, pd = bb.maxZ - bb.minZ + 26 * S;
+    const px = bb.cx + 4 * S, pz = bb.cz + 8 * S;
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(pw, 13 * S, pd), towerMat);
+    pod.position.set(px, 6.5 * S, pz);
     pod.castShadow = true; pod.receiveShadow = true;
     root.add(pod);
-    colliders.push(makeAABB(px, pz, pw, pd, 13));
+    colliders.push(makeAABB(px, pz, pw, pd, 13 * S));
     // roof mechanical caps on the towers
     for (const t of towers) {
       const tb = bbox(t.pts);
-      const th = Math.min(100, Math.max(3, t.height ?? (t.levels ? t.levels * 3.1 : 80)));
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 8), M.metal);
-      cap.position.set(tb.cx, th + 1.5, tb.cz);
+      const th = Math.min(100, Math.max(3, t.height ?? (t.levels ? t.levels * 3.1 : 80))) * S;
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(10 * S, 3 * S, 8 * S), M.metal);
+      cap.position.set(tb.cx, th + 1.5 * S, tb.cz);
       cap.castShadow = true;
       root.add(cap);
     }
@@ -584,19 +588,19 @@ export function buildWorld(scene: THREE.Scene): World {
     if (!['secondary', 'tertiary', 'residential'].includes(r.highway)) continue;
     const hw = (ROAD_W[r.highway] ?? 7) / 2;
     let k = 0;
-    for (const s of walk(clampPts(r.pts, H - 2), 27)) {
+    for (const s of walk(clampPts(r.pts, H - 2), 27 * S)) {
       k++;
       const side = k % 2 === 0 ? 1 : -1;
       const nx = -s.dz * side, nz = s.dx * side;
-      const x = s.x + nx * (hw + 1.7), z = s.z + nz * (hw + 1.7);
+      const x = s.x + nx * (hw + 1.7 * S), z = s.z + nz * (hw + 1.7 * S);
       if (Math.abs(x) > H - 2 || Math.abs(z) > H - 2 || inBuilding(x, z)) continue;
       const ry = Math.atan2(s.dx, s.dz);
       poleGeos.push(poleGeo.clone().translate(x, 3.1, z));
       lampSide.makeRotationY(ry);
-      lampSide.setPosition(x - nx * 0.8, 6.15, z - nz * 0.8);
+      lampSide.setPosition(x - nx * 0.8 * S, 6.15, z - nz * 0.8 * S);
       poleGeos.push(armGeo.clone().applyMatrix4(lampSide));
-      lampGeos.push(lampGeo.clone().translate(x - nx * 1.5, 6.05, z - nz * 1.5));
-      lampPts.push({ x: x - nx * 1.5, z: z - nz * 1.5 });
+      lampGeos.push(lampGeo.clone().translate(x - nx * 1.5 * S, 6.05, z - nz * 1.5 * S));
+      lampPts.push({ x: x - nx * 1.5 * S, z: z - nz * 1.5 * S });
       colliders.push(makeAABB(x, z, 0.3, 0.3, 6.2));
     }
   }
@@ -625,23 +629,23 @@ export function buildWorld(scene: THREE.Scene): World {
   const carColors = [0x8a2f2f, 0x2f4a8a, 0x9aa0a6, 0x2f6a4a, 0xd8c860, 0x33363b, 0xc8c8c8];
   const carBodyGeos = carColors.map(() => [] as THREE.BufferGeometry[]);
   const carDarkGeos: THREE.BufferGeometry[] = [];
-  const bodyGeo = new THREE.BoxGeometry(4.4, 1.0, 1.8);
-  const cabGeo = new THREE.BoxGeometry(2.3, 0.62, 1.66);
-  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 8);
+  const bodyGeo = new THREE.BoxGeometry(4.4 * S, 1.0 * S, 1.8 * S);
+  const cabGeo = new THREE.BoxGeometry(2.3 * S, 0.62 * S, 1.66 * S);
+  const wheelGeo = new THREE.CylinderGeometry(0.33 * S, 0.33 * S, 0.24 * S, 8);
   wheelGeo.rotateX(Math.PI / 2);
   let carIdx = 0;
   for (const r of roads) {
     if (!['secondary', 'tertiary', 'residential', 'service'].includes(r.highway)) continue;
     const hw = (ROAD_W[r.highway] ?? 7) / 2;
-    if (hw < 2.4) continue;
+    if (hw < 2.4 * S) continue;
     let k = 0;
-    for (const s of walk(clampPts(r.pts, H - 4), 31)) {
+    for (const s of walk(clampPts(r.pts, H - 4), 31 * S)) {
       k++;
       if (k % 2) continue;
       const side = k % 4 === 1 ? 1 : -1;
       const nx = -s.dz * side, nz = s.dx * side;
-      const x = s.x + nx * (hw - 1.05), z = s.z + nz * (hw - 1.05);
-      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) || nearRoad(x, z, -1.2)) continue;
+      const x = s.x + nx * (hw - 1.05 * S), z = s.z + nz * (hw - 1.05 * S);
+      if (Math.abs(x) > H - 4 || Math.abs(z) > H - 4 || inBuilding(x, z) || nearRoad(x, z, -1.2 * S)) continue;
       const ry = Math.atan2(s.dx, s.dz) + (k % 8 < 4 ? 0 : Math.PI);
       const rot = new THREE.Matrix4().makeRotationY(ry);
       const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
@@ -649,16 +653,16 @@ export function buildWorld(scene: THREE.Scene): World {
         m.setPosition(x + ox * Math.cos(ry) + oz * Math.sin(ry), oy, z - ox * Math.sin(ry) + oz * Math.cos(ry));
         return g.clone().applyMatrix4(m);
       };
-      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72, 0));
-      carDarkGeos.push(place(cabGeo, -0.15, 1.5, 0));
+      carBodyGeos[carIdx % carColors.length].push(place(bodyGeo, 0, 0.72 * S, 0));
+      carDarkGeos.push(place(cabGeo, -0.15 * S, 1.5 * S, 0));
       for (const [wx, wz] of [[1.45, 0.82], [1.45, -0.82], [-1.45, 0.82], [-1.45, -0.82]] as const) {
-        carDarkGeos.push(place(wheelGeo, wx, 0.33, wz));
+        carDarkGeos.push(place(wheelGeo, wx * S, 0.33 * S, wz * S));
       }
-      const c = Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8;
-      const sn = Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8;
-      const carCol = makeAABB(x, z, c, sn, 1.7);
+      const c = (Math.abs(Math.cos(ry)) * 4.4 + Math.abs(Math.sin(ry)) * 1.8) * S;
+      const sn = (Math.abs(Math.sin(ry)) * 4.4 + Math.abs(Math.cos(ry)) * 1.8) * S;
+      const carCol = makeAABB(x, z, c, sn, 1.7 * S);
       colliders.push(carCol);
-      rideable(carCol, 1.55); // ride the roof — requires a jump
+      rideable(carCol, 1.55 * S); // ride the roof — requires a jump
       carIdx++;
     }
   }
@@ -709,7 +713,7 @@ export function buildWorld(scene: THREE.Scene): World {
   // concrete barriers near the tram stop
   if (stop) {
     for (const s of [1, -1]) {
-      const x = stop.x + -stopD.z * s * 8, z = stop.z + stopD.x * s * 8;
+      const x = stop.x + -stopD.z * s * 8 * S, z = stop.z + stopD.x * s * 8 * S;
       const b = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.9, 0.5), M.concrete);
       b.position.set(x, 0.45, z);
       b.rotation.y = Math.atan2(stopD.x, stopD.z);
@@ -721,7 +725,7 @@ export function buildWorld(scene: THREE.Scene): World {
     }
     // glass bus shelter on the north-side platform
     const ry = Math.atan2(stopD.x, stopD.z);
-    const sx = stop.x + -stopD.z * 4.6, sz = stop.z + stopD.x * 4.6;
+    const sx = stop.x + -stopD.z * 4.6 * S, sz = stop.z + stopD.x * 4.6 * S;
     if (!inBuilding(sx, sz)) {
       const rot = new THREE.Matrix4().makeRotationY(ry);
       const place = (g: THREE.BufferGeometry, ox: number, oy: number, oz: number) => {
@@ -792,11 +796,11 @@ export function buildWorld(scene: THREE.Scene): World {
   // invisible boundary walls onto the empty outskirts.
   const IN = H - 8;
   // Tram lines 5 & 6: the two longest chained rail routes through the crossing.
-  const tramRoutes = chainPolys(trams.map((t) => longestInside(t.pts, IN)), 6, 130)
+  const tramRoutes = chainPolys(trams.map((t) => longestInside(t.pts, IN)), 6 * S, 130 * S)
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 2);
   // Buses run on the arterials around the district (real routes 3 & 57 serve Korsvägen).
   const busNames = new Set(['Örgrytevägen', 'Skånegatan', 'Södra Vägen', 'Korsvägen', 'Eklandagatan']);
-  const busRoutes = chainPolys(roads.filter((r) => r.name && busNames.has(r.name)).map((r) => longestInside(r.pts, IN)), 8, 150)
+  const busRoutes = chainPolys(roads.filter((r) => r.name && busNames.has(r.name)).map((r) => longestInside(r.pts, IN)), 8 * S, 150 * S)
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 3);
   // Cars: chain trimmed street segments (any road meeting another within 8 m —
   // OSM way ends leave a gap at junctions) into realistic driving routes
@@ -809,19 +813,19 @@ export function buildWorld(scene: THREE.Scene): World {
       .filter((r) =>
         ['secondary', 'tertiary', 'unclassified', 'residential', 'service'].includes(r.highway))
       .map((r) => longestInside(r.pts, IN))
-      .filter((pts) => pts.length >= 2 && pathLen(pts) >= 20),
-    8, 60,
+      .filter((pts) => pts.length >= 2 && pathLen(pts) >= 20 * S),
+    8 * S, 60 * S,
   )
     .filter((pts) => {
       let near = 0;
-      for (const p of pts) if (busPts.some((b) => Math.hypot(p.x - b.x, p.z - b.z) < 3)) near++;
+      for (const p of pts) if (busPts.some((b) => Math.hypot(p.x - b.x, p.z - b.z) < 3 * S)) near++;
       return near / pts.length < 0.3;
     })
     .sort((a, b) => pathLen(b) - pathLen(a)).slice(0, 6);
 
   // --- player start: on the street by the crossing, facing the towers -------------------------
-  // Same physical spot as before, expressed in the re-centred arena coordinates.
-  const startTarget = { x: 0 - WORLD.centerX, z: 70 - WORLD.centerZ };
+  // Same physical spot as before, expressed in the re-centred miniature coordinates.
+  const startTarget = { x: (0 - WORLD.centerX) * S, z: (70 - WORLD.centerZ) * S };
   let start = { x: startTarget.x, z: startTarget.z };
   let sd = 1e9;
   for (const r of roads.filter((r) => r.name === 'Örgrytevägen' || r.name === 'Korsvägen')) {

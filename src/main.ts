@@ -20,11 +20,11 @@ import { Fx } from './fx';
 import { Hud } from './hud';
 import { initAudio, resumeAudio, sfx } from './audio';
 import { rng } from './rng';
-import { rayAABB } from './collision';
+import { rayAABB, invalidateColliderGrid } from './collision';
 import { TouchControls, isTouchDevice } from './touch';
 import { buildLisebergskanin } from './rabbit';
 import { BunnyHelpers } from './bunny';
-import { buildShanghaiWorld, SH_ISLAND } from './shanghai';
+import { buildShanghaiWorld, SH_ISLAND, SH_SCALE } from './shanghai';
 import { buildNoodleDrop } from './noodle';
 
 // --- Menu bootstrap ----------------------------------------------------------
@@ -67,7 +67,7 @@ function createRenderer(): THREE.WebGLRenderer {
   let lastErr: unknown;
   for (let i = 0; i < 4; i++) {
     try {
-      return new THREE.WebGLRenderer({ antialias: !isMobile });
+      return new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
     } catch (e) {
       lastErr = e;
       const until = performance.now() + 400; // let the GPU process free contexts
@@ -308,6 +308,8 @@ let atmosSh: Atmosphere | null = null;
 let activeWorld: World = world;
 let inShanghai = false;
 const travel = { active: false, t: 0, toSh: true, swapped: false };
+/** Seconds before the director may spawn again (Shanghai arrival calm). */
+let spawnGrace = 0;
 
 function setActiveArena(toSh: boolean): void {
   inShanghai = toSh;
@@ -316,6 +318,7 @@ function setActiveArena(toSh: boolean): void {
   const src = toSh ? worldSh!.colliders : gothenburgColliders;
   world.colliders.length = 0;
   world.colliders.push(...src);
+  invalidateColliderGrid(); // the shared array was refilled in place
 }
 
 function startTravel(toSh: boolean): void {
@@ -358,6 +361,7 @@ function doSwap(): void {
   player.yaw = activeWorld.playerStart.yaw;
   player.pitch = 0;
   player.immunity = Math.max(player.immunity, 5); // grace: traffic spares you on arrival
+  if (travel.toSh) spawnGrace = 10; // first ten seconds in Shanghai stay quiet
   hud.setArena(travel.toSh ? 'SHANGHAI · 世博园区' : 'GÖTEBORG · KORSVÄGEN');
   hud.trick(travel.toSh ? '\u{1F68C} SHANGHAI EXPO — 世博会' : '\u{1F68C} BACK TO KORSVÄGEN');
   sfx.pickup();
@@ -396,7 +400,7 @@ function finishCooking(): void {
   noodle.cooking = false;
   n.setCooking(null);
   const g = buildNoodleDrop();
-  g.position.set(n.bar.x, 0.95, n.bar.z);
+  g.position.set(n.bar.x, 0.95 * SH_SCALE, n.bar.z); // sits on the miniature counter
   scene.add(g);
   noodleDrop = { mesh: g, x: n.bar.x, z: n.bar.z, t: 0 };
   sfx.bell();
@@ -628,6 +632,8 @@ function fireWeapon(): void {
   if (def.kind === 'chain') {
     viewModel.triggerSwing(0.1);
     if (Math.random() < 0.4) sfx.chainsaw(true);
+    // two-stroke exhaust drifting off the saw while it screams
+    fx.smoke(eye.x + player.flatDir.x * 0.8, eye.y - 0.25, eye.z + player.flatDir.z * 0.8);
     const hits = zombies.meleeSweep(eye, player.flatDir, def.range, 0.5);
     for (const z of hits) {
       zombies.damage(z, def.damage * (def.chainTick ?? 0.12), dir.x * 2, dir.z * 2, { byPlayer: true });
@@ -807,6 +813,7 @@ function startGame(): void {
     deathShown = false;
     wasFiring = false;
     firing = false;
+    spawnGrace = 0;
     noodle.cooking = false;
     noodle.cool = 0;
     clearNoodleDrop();
@@ -974,7 +981,7 @@ function step(dt: number): void {
   if (noodleDrop) {
     noodleDrop.t += dt;
     noodleDrop.mesh.rotation.y += dt * 1.6;
-    noodleDrop.mesh.position.y = 0.95 + Math.sin(state.time * 3) * 0.05;
+    noodleDrop.mesh.position.y = 0.95 * SH_SCALE + Math.sin(state.time * 3) * 0.05;
     if (noodleDrop.t > 0.5 && Math.hypot(noodleDrop.x - player.pos.x, noodleDrop.z - player.pos.z) < 1.5) {
       clearNoodleDrop(); // slurped on the spot
       player.health = PLAYER.maxHealth;
@@ -1058,7 +1065,9 @@ function step(dt: number): void {
     eyeY: PLAYER.eyeHeight,
   };
   // in Shanghai the director spawns at max level from second one (+1e6 time credit)
+  if (spawnGrace > 0) spawnGrace = Math.max(0, spawnGrace - dt);
   director.update(dt, inShanghai ? state.time + 1e6 : state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
+    if (spawnGrace > 0) return; // arrival calm: the first packs simply don't show
     const members: Zombie[] = [];
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;

@@ -4,9 +4,9 @@ import { WORLD } from './config';
 
 /**
  * The E6 / Lundbyleden motorway that runs past Gårdsmotet, east of Korsvägen.
- * It sits ~230 m outside the arena boundary (the wall is invisible but solid,
- * so the player never reaches it) — pure horizon scenery, exactly like the
- * Carlanderska villa.
+ * It sits ~115 m outside the (1:2 miniature) arena boundary (the wall is
+ * invisible but solid, so the player never reaches it) — pure horizon
+ * scenery, exactly like the Carlanderska villa.
  *
  * Rendered fog-free because it lies beyond the fog line: a dark asphalt ribbon
  * plus two counter-flowing streams of head/tail-lights (one additive Points
@@ -19,7 +19,7 @@ interface Pt { x: number; z: number }
 interface MotorwayWay { id: number; highway: string; name: string | null; pts: Pt[] }
 interface Raw { motorways?: MotorwayWay[] }
 const raw = mapdataRaw as unknown as Raw;
-const shift = (p: Pt): Pt => ({ x: p.x - WORLD.centerX, z: p.z - WORLD.centerZ });
+const shift = (p: Pt): Pt => ({ x: (p.x - WORLD.centerX) * WORLD.scale, z: (p.z - WORLD.centerZ) * WORLD.scale });
 
 /** Keep only the part of each polyline that is near enough to see. */
 const VIEW_R = 520;
@@ -39,6 +39,8 @@ const ways: { highway: string; pts: Pt[] }[] = (raw.motorways ?? []).flatMap((w)
 );
 
 const WIDTH: Record<string, number> = { motorway: 16, trunk: 13, motorway_link: 7, trunk_link: 6 };
+// miniature ribbon, consistent with the scaled arena (WORLD.scale)
+for (const k in WIDTH) WIDTH[k] *= WORLD.scale;
 
 /** Cumulative arc-length table for a polyline. */
 function cum(pts: Pt[]): { c: number[]; total: number } {
@@ -114,7 +116,7 @@ export function buildHighway(scene: THREE.Scene): Highway | null {
     const t = tables.length ? i % tables.length : 0;
     const dir = i % 2 === 0 ? 1 : -1;
     const total = tables.length ? tables[t].total : 0;
-    state.push({ t, s: Math.random() * total, dir, speed: 22 + Math.random() * 14, lane: dir > 0 ? 3.5 : -3.5 });
+    state.push({ t, s: Math.random() * total, dir, speed: 22 + Math.random() * 14, lane: (dir > 0 ? 3.5 : -3.5) * WORLD.scale });
     const c = dir > 0 ? white : red;
     lcol[i * 3] = c.r; lcol[i * 3 + 1] = c.g; lcol[i * 3 + 2] = c.b;
   }

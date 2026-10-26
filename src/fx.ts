@@ -6,6 +6,8 @@ interface Particle {
   alive: boolean;
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number;
+  /** downward acceleration (m/s²); negative = buoyant (smoke rises) */
+  grav: number;
   life: number;
   maxLife: number;
   color: THREE.Color;
@@ -53,7 +55,7 @@ export class Fx {
     this.points.frustumCulled = false;
     scene.add(this.points);
     for (let i = 0; i < n; i++) {
-      this.pool.push({ alive: false, x: 0, y: -10, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, color: new THREE.Color() });
+      this.pool.push({ alive: false, x: 0, y: -10, z: 0, vx: 0, vy: 0, vz: 0, grav: 9.5, life: 0, maxLife: 1, color: new THREE.Color() });
       this.positions[i * 3 + 1] = -10;
     }
     this.flashLight = new THREE.PointLight(0xffaa55, 0, 25);
@@ -79,12 +81,13 @@ export class Fx {
     scene.add(this.chunks);
   }
 
-  private emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, color: THREE.Color): void {
+  private emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, color: THREE.Color, grav = 9.5): void {
     for (const p of this.pool) {
       if (!p.alive) {
         p.alive = true;
         p.x = x; p.y = y; p.z = z;
         p.vx = vx; p.vy = vy; p.vz = vz;
+        p.grav = grav;
         p.life = life; p.maxLife = life;
         p.color.copy(color);
         return;
@@ -112,6 +115,19 @@ export class Fx {
         x, y, z,
         (Math.random() - 0.5) * 5, 1 + Math.random() * 3, (Math.random() - 0.5) * 5,
         0.3 + Math.random() * 0.25, c,
+      );
+    }
+  }
+
+  /** Two-stroke exhaust puff from the chainsaw: buoyant grey motes. */
+  smoke(x: number, y: number, z: number): void {
+    const c = new THREE.Color(0x9aa0a6);
+    for (let i = 0; i < 3; i++) {
+      this.emit(
+        x + (Math.random() - 0.5) * 0.15, y, z + (Math.random() - 0.5) * 0.15,
+        (Math.random() - 0.5) * 0.5, 0.7 + Math.random() * 0.7, (Math.random() - 0.5) * 0.5,
+        0.6 + Math.random() * 0.5, c,
+        -1.4, // buoyant: the puff keeps rising instead of falling
       );
     }
   }
@@ -184,7 +200,7 @@ export class Fx {
         this.positions[i * 3 + 1] = -10;
         continue;
       }
-      p.vy -= 9.5 * dt;
+      p.vy -= p.grav * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;

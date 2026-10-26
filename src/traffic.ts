@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AABB, Vec2, resolveCircleWorld } from './collision';
-import { PLAYER, ZOMBIE, SCOOTER } from './config';
+import { PLAYER, ZOMBIE, SCOOTER, WORLD } from './config';
 import { RNG } from './rng';
 import { sfx } from './audio';
 import type { World, RideSurface } from './world';
@@ -77,6 +77,15 @@ const SPEC: Record<Kind, {
   // at you. More irritating than dangerous.
   scooter: { speed: 5.2, halfLen: 0.7, halfW: 0.35, laneOff: 3.1, playerDmg: 8, zombieDmg: 20, shake: 0.18 },
 };
+// The miniature streets are half as wide, so the vehicles and their lanes
+// shrink with them (speeds stay in real m/s — traffic still feels fast).
+// Scooters are player-scale rideables: only their lane offset shrinks.
+for (const k of ['tram', 'bus', 'car'] as const) {
+  SPEC[k].halfLen *= WORLD.scale;
+  SPEC[k].halfW *= WORLD.scale;
+  SPEC[k].laneOff *= WORLD.scale;
+}
+SPEC.scooter.laneOff *= WORLD.scale;
 
 interface Vehicle {
   kind: Kind; path: Path; group: THREE.Object3D;
@@ -336,7 +345,7 @@ export class Traffic {
     world.carRoutes.forEach((pts, i) => {
       const total = makePath(pts).total;
       const h = SPEC.car.halfLen;
-      if (i < 2 && total > 300) {
+      if (i < 2 && total > 150) {
         // two cars per long route, each owning half so they never overlap
         const mid = total / 2;
         this.spawn('car', pts, rng, 0, [h + 4, mid - h - 4]);
@@ -364,6 +373,9 @@ export class Traffic {
       : kind === 'bus' ? (flygbuss ? buildFlygbuss() : buildBus(line))
       : kind === 'scooter' ? buildScooter()
       : buildCar(rng);
+    // miniature traffic on miniature streets (scooters stay player-scale:
+    // they are rideable gameplay objects)
+    if (kind !== 'scooter') group.scale.setScalar(WORLD.scale);
     const v: Vehicle = {
       kind, path, group, laneOff: spec.laneOff, flygbuss: flygbuss || undefined,
       speed: kind === 'car' || kind === 'scooter'

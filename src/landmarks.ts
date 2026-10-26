@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { WORLD } from './config';
 
 /**
  * Real landmarks that sit just outside the arena boundary (the boundary wall
@@ -193,6 +194,8 @@ export function buildLandmarks(scene: THREE.Scene): Landmarks {
     root.add(trunks, leaves);
   }
 
+  // 1:2 miniature — the whole park sits closer, consistent with the scaled arena.
+  root.scale.setScalar(WORLD.scale);
   scene.add(root);
   return {
     update(dt: number): void {
