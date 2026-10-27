@@ -358,7 +358,7 @@ function doSwap(): void {
   if (travel.toSh && !worldSh) {
     // first visit: build the Expo arena and its little traffic fleet
     worldSh = buildShanghaiWorld(scene);
-    trafficSh = new Traffic(scene, worldSh, { scooterFleet: 4 });
+    trafficSh = new Traffic(scene, worldSh, { scooterFleet: 4, flygbuss: false });
     trafficSh.attachZombies(zombies);
     trafficSh.onTrick = (label, pts) => {
       state.trickScore += pts;

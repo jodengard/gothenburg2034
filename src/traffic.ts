@@ -317,10 +317,11 @@ export class Traffic {
   /** called on a clean landing with a scored trick */
   onTrick: ((label: string, points: number) => void) | null = null;
 
-  constructor(scene: THREE.Scene, world: World, opts?: { scooterFleet?: number }) {
+  constructor(scene: THREE.Scene, world: World, opts?: { scooterFleet?: number; flygbuss?: boolean }) {
     scene.add(this.root);
     const rng = this.rng;
     this.scooterFleet = opts?.scooterFleet ?? SCOOTER.fleet;
+    const flygbuss = opts?.flygbuss ?? true;
     this.colliders = world.colliders;
     this.surfaces = world.surfaces;
     for (const s of world.surfaces) this.rideTop.set(s.col, s.top);
@@ -338,8 +339,26 @@ export class Traffic {
       world.tramRoutes.forEach((pts, i) => this.spawn('tram', pts, rng, [5, 6][i % 2]));
     }
     // The first bus line is the Flygbussen: the airport coach that (oddly)
-    // terminates in Shanghai — board it to travel there.
-    world.busRoutes.forEach((pts, i) => this.spawn('bus', pts, rng, [3, 57, 6][i % 3], undefined, i === 0));
+    // terminates in Shanghai — board it to travel there. Shanghai itself has
+    // no moving coach (the one on the plaza is parked): that route runs
+    // normal car traffic instead.
+    world.busRoutes.forEach((pts, i) => {
+      if (i === 0 && !flygbuss) {
+        // split into two cars earlier than the standard 150 m: this arena's
+        // arterial is short and a single car would look like an accident
+        const total = makePath(pts).total;
+        const h = SPEC.car.halfLen;
+        if (total > 60 * WORLD.scale) {
+          const mid = total / 2;
+          this.spawn('car', pts, rng, 0, [h + 2, mid - 2]);
+          this.spawn('car', pts, rng, 0, [mid + 2, total - h - 2]);
+        } else {
+          this.spawn('car', pts, rng, 0);
+        }
+        return;
+      }
+      this.spawn('bus', pts, rng, [3, 57, 6][i % 3], undefined, i === 0);
+    });
     world.carRoutes.forEach((pts, i) => {
       const total = makePath(pts).total;
       const h = SPEC.car.halfLen;

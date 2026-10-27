@@ -33,6 +33,13 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 - **Verified live**: 5-min soak — stars 6 the whole way, pressure 6→15, population
   60→95+ pinned from minute 3, 0 NaN, 0 errors, 0.413 ms/step at ~95 zombies.
   49/49 unit tests.
+- **Follow-up — no moving Flygbussen in Shanghai**: the airport coach only runs in
+  Gothenburg now (`Traffic` opts `flygbuss: false` for `trafficSh`); its old route on
+  the 周家渡路 arterial runs normal car traffic instead — two cars on tight half-ranges
+  (the arena's only street is 37 units, so the standard 150 m split and 4 m margins
+  rejected the spawns; margins trimmed to 2). The parked return coach on the plaza is
+  untouched and still boards the trip home. Verified live: Gothenburg flyg=1,
+  Shanghai flyg=0 / cars=2 both driving / shuttle intact.
 
 ## Previous milestone: Shanghai endless escalation (zombies-2.0 — the stars never stop) — verified
 
