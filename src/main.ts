@@ -462,7 +462,7 @@ function clearPickups(): void {
   pickups.length = 0;
 }
 
-// --- Carrots: dropped by zombies, walked over: +20 % HP and a bunny helper --
+// --- Carrots: dropped by zombies, walked over: +15 % HP and a bunny helper --
 const carrots: { pos: THREE.Vector3; mesh: THREE.Group }[] = [];
 
 function spawnCarrot(x: number, z: number): void {

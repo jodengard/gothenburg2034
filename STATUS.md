@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 44 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 46 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -30,16 +30,22 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 - **Contact detonation**: belly-to-player contact (2.1 m, LOS required) blows the gut —
   up to 30 blast damage with falloff, screen shake, gore, the corpse consumed
   (`exploded`), and 15 blast damage to nearby zombies (the horde eats its own).
-  Kill them at range; hugging one is the mistake.
+- **Death detonation**: a boomer now explodes on ANY death — bullet, chainsaw, traffic —
+  with the full blast + gas treatment. The one safe kill is a clean head kill (headshot
+  or melee to the skull): drop the brain and the guts stay put. Body-shotting one at
+  melee range is therefore a trade; aim for the head or kill from distance.
 - **Shit-clouds** (`src/gas.ts`): a 4.5 m, 7 s pool of 4 swirling translucent green
   clouds (14 puffs each, spread + rise + fade). Standing in one costs 6 hp/s in
   0.6 s ticks with a cough; zombies don't mind — they already smell like this.
 - **Verified live**: 22.3 blast damage at exactly the predicted 2.1 m falloff point,
   18 gas damage over 3 s of breathing, 5-min threat-4 soak: 21 organic detonations,
-  0 NaN, 0 errors. 44/44 unit tests (4 new).
-- **Follow-up — carrots heal**: walking over a carrot now also restores 20 % of max HP
+  0 NaN, 0 errors. 46/46 unit tests (6 new).
+- **Follow-up — carrots heal**: walking over a carrot now also restores 15 % of max HP
   (`BUNNY.healFraction`) on top of summoning the bunny helper; the trick banner shows the
-  healed amount and it never overheals past max. Verified live: 50 → 70 HP, 100 → 100.
+  healed amount and it never overheals past max. Verified live: 50 → 65 HP, 100 → 100.
+- **Follow-up — throwers nerfed**: throws now scatter around the lead point
+  (`PACK.throwSpreadMin` 0.8 m + 12 % of throw distance, uniform disc) instead of nailing
+  the prediction exactly — dodging by backing off or breaking LOS is now reliably worth it.
 
 ## Previous milestone: Zombies 2.0 (zombies-2.0 branch — pack knowledge, audible tactics, real preparation) — verified
 

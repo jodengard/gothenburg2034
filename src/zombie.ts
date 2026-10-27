@@ -299,12 +299,11 @@ export class ZombieManager {
     return false;
   }
 
-  /** Contact detonation: the gut lets go — the body is consumed by its own
-   * blast (exploded=true hides the corpse, gore flies, gas cloud follows). */
+  /** Contact detonation: the gut lets go on belly contact. kill() notices
+   * exploded=true and fires the detonation event (shared with death booms). */
   private fatBoom(z: Zombie): void {
     z.exploded = true;
     this.kill(z);
-    this.events.onFatExplosion(z.pos.x, z.pos.z);
   }
 
   /** Area damage from a fat-zombie blast: the horde eats its own. */
@@ -320,9 +319,12 @@ export class ZombieManager {
     z.state = 'dead';
     z.deadT = 0;
     z.fallDir = Math.random() < 0.5 ? 1 : -1;
+    // Boomer rule: killing it makes it detonate — blast + shit-cloud — UNLESS
+    // the kill took its head off clean (headshot / melee to the skull is the
+    // safe way to drop one). Contact detonations pre-set exploded=true.
+    const fatDeath = z.fat && (z.exploded || !z.lastHitHead);
     // Fatality: a player kill detonates the corpse — headshots always, others sometimes.
-    // (fatBoom pre-sets exploded: the body is consumed by its own blast)
-    z.exploded = z.exploded || (z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance));
+    z.exploded = z.exploded || fatDeath || (z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance));
     z.wasRiding = z.ride !== null; // carrot drops key off this before we clear ride
     if (z.ride) {
       z.ride = null; // tumble off the vehicle; traffic notices and drops it
@@ -340,6 +342,8 @@ export class ZombieManager {
       z.carrying = null;
     }
     this.events.onKill(z);
+    // the boom follows the kill: blast, gas, splash — after onKill hid the corpse
+    if (fatDeath) this.events.onFatExplosion(z.pos.x, z.pos.z);
   }
 
   /** Hitscan against zombies. Returns nearest hit zombie, distance, and headshot flag. */
@@ -578,9 +582,9 @@ export class ZombieManager {
           const obj = z.carrying;
           z.carrying = null;
           obj.mesh.visible = false; // the projectile clone flies; this one lands later
-          // lead a moving target a touch (capped): standing still is a
-          // guaranteed hit, sprinting sideways beats the throw — dodging
-          // becomes a choice, not a coin flip
+          // lead a moving target a touch (capped), then scatter the aim:
+          // throws land NEAR the lead point, never exactly on it — backing
+          // off or breaking LOS late is a real dodge, not a coin flip
           let lx = player.vel.x * PACK.throwLeadTime;
           let lz = player.vel.z * PACK.throwLeadTime;
           const ll = Math.hypot(lx, lz);
@@ -588,8 +592,14 @@ export class ZombieManager {
             lx *= PACK.throwLeadMax / ll;
             lz *= PACK.throwLeadMax / ll;
           }
-          const ax = toPlayerX + lx;
-          const az = toPlayerZ + lz;
+          const ax0 = toPlayerX + lx;
+          const az0 = toPlayerZ + lz;
+          const d0 = Math.hypot(ax0, az0) || 1;
+          const spread = PACK.throwSpreadMin + d0 * PACK.throwSpreadFrac;
+          const sa = Math.random() * Math.PI * 2;
+          const sr = spread * Math.sqrt(Math.random()); // uniform across a disc
+          const ax = ax0 + Math.cos(sa) * sr;
+          const az = az0 + Math.sin(sa) * sr;
           const d = Math.hypot(ax, az) || 1;
           const speed = THROWABLE.speed;
           const vel = new THREE.Vector3(

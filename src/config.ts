@@ -48,7 +48,7 @@ export const BUNNY = {
   dropChance: 0.05, // chance a zombie kill drops a carrot
   riderDropChance: 0.35, // scooter-riding hooligans carry the good stuff
   pickupRange: 1.6, // carrots auto-pick-up when you walk over them
-  healFraction: 0.2, // eating a carrot also restores this share of max HP
+  healFraction: 0.15, // eating a carrot also restores this share of max HP
   maxHelpers: 3, // bunny champions on the field at once
   lifetime: 45, // seconds of carrot power per helper
   speed: 7.5, // kickbike top speed (m/s)
@@ -142,6 +142,8 @@ export const PACK = {
   barkCooldown: 4, // s between a pack's coordination howls
   throwLeadTime: 0.35, // s the thrower leads a moving target
   throwLeadMax: 2.5, // m cap on that lead — sprinting sideways beats the throw
+  throwSpreadMin: 0.8, // m: aim scatter even at point-blank — no throw is exact
+  throwSpreadFrac: 0.12, // + this fraction of throw distance: far throws are wild
   flankBonusRange: 1.1, // m extra melee reach when attacking from behind
   behindDot: -0.25, // dot(attack bearing, player facing) below which a hit is a flank
   assaultCommit: 7, // m: flankers abandon the stand-off once the pack assaults

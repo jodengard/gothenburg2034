@@ -392,6 +392,59 @@ describe('fat boomers', () => {
     zm.clearAll();
   });
 
+  it('detonates on any death except a clean head kill', () => {
+    const log: string[] = [];
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents(log));
+    // body shot: the corpse goes nuclear
+    const a = zm.spawn(0, 0, 1, 3, true);
+    zm.damage(a, 9999, 0, 0, { byPlayer: true });
+    expect(a.state).toBe('dead');
+    expect(log).toContain('boom');
+    expect(a.exploded).toBe(true);
+    // headshot: dropped clean, no blast, no cloud
+    log.length = 0;
+    const b = zm.spawn(5, 0, 1, 3, true);
+    zm.damage(b, 9999, 0, 0, { byPlayer: true, headshot: true });
+    expect(b.state).toBe('dead');
+    expect(log).not.toContain('boom');
+    // traffic mow (not a player kill): still detonates — nobody mows a boomer safely
+    log.length = 0;
+    const c = zm.spawn(10, 0, 1, 3, true);
+    zm.damage(c, 9999);
+    expect(log).toContain('boom');
+    zm.clearAll();
+  });
+
+  it('throws scatter around the lead point instead of nailing it', () => {
+    const vels: THREE.Vector3[] = [];
+    const zm = new ZombieManager(new THREE.Scene(), [], {
+      onPlayerDamage: () => {}, onKill: () => {}, onHurtSound: () => {},
+      onFatExplosion: () => {}, onThrow: (_p, v) => { vels.push(v.clone()); },
+    });
+    const player: PlayerView = {
+      pos: { x: 0, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    const z = zm.spawn(10, 0, 1, 5); // 10 m out on +x, aim line points -x
+    const obj = { pos: new THREE.Vector3(), mesh: new THREE.Object3D() } as never;
+    const lats: number[] = [];
+    for (let k = 0; k < 30; k++) {
+      z.carrying = obj;
+      z.role = 'thrower';
+      z.state = 'windupThrow';
+      z.stateT = 0.01;
+      zm.update(1 / 30, player, 5, []);
+      if ((z.state as string) === 'recoverThrow' && vels.length) {
+        const v = vels[vels.length - 1];
+        lats.push(v.z / Math.hypot(v.x, v.z)); // signed sideways deviation
+      }
+    }
+    expect(lats.length).toBeGreaterThan(10);
+    const range = Math.max(...lats) - Math.min(...lats);
+    expect(range).toBeGreaterThan(0.05); // not laser-accurate
+    expect(range).toBeLessThan(0.8); // ...but still roughly aimed at you
+    zm.clearAll();
+  });
+
   it('never get tactical roles', () => {
     const members = [
       fakeZombie(9, 0), fakeZombie(11, 3), fakeZombie(-10, 2),
