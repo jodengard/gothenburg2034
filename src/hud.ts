@@ -50,9 +50,9 @@ export class Hud {
     this.els.kills.textContent = String(s.kills);
     this.els.tricks.textContent = `Tricks: ${s.trickScore}`;
     this.els.tricks.style.display = s.trickScore > 0 ? '' : 'none';
-    // Shanghai escalates past 6 (endless mode) — the row grows with the stars
-    this.els.threat.textContent = '★'.repeat(s.threatLevel) + '☆'.repeat(Math.max(0, 5 - s.threatLevel));
-    this.els.threat.style.color = s.threatLevel >= 4 ? '#ff5544' : s.threatLevel >= 3 ? '#ffaa33' : '#ffd75e';
+    // Shanghai pins the display at 6 while the real pressure ramps behind it
+    this.els.threat.textContent = '★'.repeat(s.displayThreat) + '☆'.repeat(Math.max(0, 5 - s.displayThreat));
+    this.els.threat.style.color = s.displayThreat >= 4 ? '#ff5544' : s.displayThreat >= 3 ? '#ffaa33' : '#ffd75e';
     if (s.weaponId !== this.lastWeapon) {
       this.lastWeapon = s.weaponId;
     }
@@ -145,7 +145,7 @@ export class Hud {
     const sec = Math.floor(time % 60);
     this.els.goTime.textContent = `${m}:${sec.toString().padStart(2, '0')}`;
     this.els.goKills.textContent = String(kills);
-    this.els.goThreat.textContent = '★'.repeat(threat);
+    this.els.goThreat.textContent = '★'.repeat(Math.min(threat, 6)); // the Expo always reads six
     this.els.goBest.textContent = best;
     this.els.gameover.style.display = 'flex';
   }

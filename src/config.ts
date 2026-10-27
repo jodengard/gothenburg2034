@@ -108,18 +108,20 @@ export const THREAT = {
   // spawn slower than an earlier one), so level 1's 3x faster cadence
   // pulls the whole curve in.
   spawnIntervals: [2.0, 2.0, 1.9, 1.8, 1.6],
-  // Shanghai endless escalation: 6 stars on arrival, +1 star every
-  // shanghaiStepTime seconds after the first wave lands. Past level 5 the
-  // tables above extrapolate: cap grows by endlessCapStep per star up to
-  // endlessCapMax (perf ceiling), spawn interval decays toward
-  // endlessIntervalMin, pack size grows every endlessPackStepLevels stars.
+  // Shanghai endless escalation: the HUD stays pinned at 6 stars, but the
+  // real pressure level climbs +1 every shanghaiStepTime seconds after the
+  // first wave lands and never stops. Past level 5 the tables above
+  // extrapolate hard: cap grows by endlessCapStep per step up to
+  // endlessCapMax, spawn interval decays toward endlessIntervalMin, pack
+  // size grows every step. The Expo is meant to bury you - the bus is the
+  // escape hatch.
   shanghaiStepTime: 30,
-  endlessCapStep: 4,
-  endlessCapMax: 72,
-  endlessIntervalDecay: 0.93,
-  endlessIntervalMin: 0.7,
-  endlessPackStepLevels: 2,
-  endlessPackMax: 14,
+  endlessCapStep: 8,
+  endlessCapMax: 96,
+  endlessIntervalDecay: 0.88,
+  endlessIntervalMin: 0.5,
+  endlessPackStepLevels: 1,
+  endlessPackMax: 20,
   endlessSpeedCapThreat: 12, // zombie speed scaling stops here: always escapable
   packSizes: [
     [3, 5],

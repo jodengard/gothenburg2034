@@ -8,7 +8,8 @@ export interface GameState {
   kills: number;
   trickScore: number; // scooter trick points (spins, tailwhips, roof tops)
   health: number;
-  threatLevel: number; // 1..5 in Gothenburg; 6+ in Shanghai's endless escalation
+  threatLevel: number; // 1..5 in Gothenburg; 6+ hidden pressure in Shanghai's endless mode
+  displayThreat: number; // what the HUD shows: Shanghai keeps this pinned at 6
   highestThreat: number;
   weaponId: string;
   ammo: number; // magazine (-1 = melee / n/a)
@@ -26,6 +27,7 @@ export const state: GameState = {
   trickScore: 0,
   health: 100,
   threatLevel: 1,
+  displayThreat: 1,
   highestThreat: 1,
   weaponId: 'bat',
   ammo: -1,
@@ -43,6 +45,7 @@ export function resetState(): void {
   state.trickScore = 0;
   state.health = 100;
   state.threatLevel = 1;
+  state.displayThreat = 1;
   state.highestThreat = 1;
   state.weaponId = 'bat';
   state.ammo = -1;

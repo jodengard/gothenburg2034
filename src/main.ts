@@ -1066,18 +1066,20 @@ function step(dt: number): void {
   }
   viewModel.group.visible = !player.riding;
 
-  // threat — Shanghai runs endless escalation: 6 stars on arrival, then +1
-  // every 30 s after the first wave lands; packs and caps grow along with it
+  // threat — Shanghai runs endless escalation: the HUD stays pinned at six
+  // stars while the real pressure level climbs every 30 s behind them
   if (inShanghai) {
     shanghaiT += dt;
     const t = shanghaiThreatFor(shanghaiT - SH_GRACE);
     if (t > 6 && t > state.threatLevel) {
-      hud.trick(`\u2605 ${t} STARS — THE EXPO SURGES!`);
+      hud.trick('\u26A0 THE EXPO SURGES!');
       sfx.growl();
     }
     state.threatLevel = t;
+    state.displayThreat = 6; // six stars forever - the ramp hides behind them
   } else {
     state.threatLevel = director.level(state.time);
+    state.displayThreat = state.threatLevel;
   }
   state.highestThreat = Math.max(state.highestThreat, state.threatLevel);
 

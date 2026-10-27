@@ -21,7 +21,20 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Shanghai endless escalation (zombies-2.0 — the stars never stop) — verified
+## Current milestone: Shanghai 2.0 (shanghai-2.0 branch — six stars forever, pressure without end) — verified
+
+- **The HUD lies on purpose**: Shanghai's star row now stays pinned at 6 forever
+  (`state.displayThreat`), while a hidden pressure level climbs +1 every 30 s and never
+  stops. Game over also caps at six; the true level still feeds the high score internally.
+  The only tell is the `⚠ THE EXPO SURGES!` banner every step.
+- **Ramp turned up until it actually overwhelms**: cap +8/step (ceiling 96), spawn
+  interval ×0.88/step (floor 0.5 s), pack size +1/step (cap 20). By pressure 12 (~4 min)
+  packs of 12–14 land every ~0.6 s.
+- **Verified live**: 5-min soak — stars 6 the whole way, pressure 6→15, population
+  60→95+ pinned from minute 3, 0 NaN, 0 errors, 0.413 ms/step at ~95 zombies.
+  49/49 unit tests.
+
+## Previous milestone: Shanghai endless escalation (zombies-2.0 — the stars never stop) — verified
 
 - **Shanghai threat is no longer pinned at 6**: arrival still runs the 10 s calm, then
   the rating climbs **+1 star every 30 s forever** (`shanghaiThreatFor`, counted from
