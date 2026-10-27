@@ -108,6 +108,19 @@ export const THREAT = {
   // spawn slower than an earlier one), so level 1's 3x faster cadence
   // pulls the whole curve in.
   spawnIntervals: [2.0, 2.0, 1.9, 1.8, 1.6],
+  // Shanghai endless escalation: 6 stars on arrival, +1 star every
+  // shanghaiStepTime seconds after the first wave lands. Past level 5 the
+  // tables above extrapolate: cap grows by endlessCapStep per star up to
+  // endlessCapMax (perf ceiling), spawn interval decays toward
+  // endlessIntervalMin, pack size grows every endlessPackStepLevels stars.
+  shanghaiStepTime: 30,
+  endlessCapStep: 4,
+  endlessCapMax: 72,
+  endlessIntervalDecay: 0.93,
+  endlessIntervalMin: 0.7,
+  endlessPackStepLevels: 2,
+  endlessPackMax: 14,
+  endlessSpeedCapThreat: 12, // zombie speed scaling stops here: always escapable
   packSizes: [
     [3, 5],
     [4, 5],

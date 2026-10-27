@@ -6,6 +6,7 @@ import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorl
 import { WeaponState, rollDrop } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, PackManager, attacksFromBehind, Pack } from '../src/pack';
+import { shanghaiThreatFor, threatParams } from '../src/director';
 import { Zombie, PlayerView, Role, ZombieManager, ZombieEvents } from '../src/zombie';
 import { GasClouds } from '../src/gas';
 import { World } from '../src/world';
@@ -462,9 +463,37 @@ describe('fat boomers', () => {
   });
 });
 
+// --- Shanghai endless escalation ---------------------------------------------------------
+describe('shanghai escalation', () => {
+  it('adds a star every step after the first wave lands', () => {
+    expect(shanghaiThreatFor(-10)).toBe(6); // arrival calm: still six
+    expect(shanghaiThreatFor(0)).toBe(6); // first wave just landed
+    expect(shanghaiThreatFor(29.9)).toBe(6);
+    expect(shanghaiThreatFor(30)).toBe(7); // +1 star
+    expect(shanghaiThreatFor(95)).toBe(9); // keeps climbing
+  });
+  it('extrapolates spawn pressure past level 5 with ceilings', () => {
+    const p5 = threatParams(5);
+    const p6 = threatParams(6);
+    const p20 = threatParams(20);
+    // table levels unchanged
+    expect(p5.cap).toBe(THREAT.popCaps[4]);
+    expect(p5.packMax).toBe(THREAT.packSizes[4][1]);
+    // endless levels grow...
+    expect(p6.cap).toBeGreaterThan(p5.cap);
+    expect(p6.interval).toBeLessThan(p5.interval);
+    expect(p20.packMax).toBeGreaterThan(p5.packMax);
+    // ...but stay inside the perf envelope
+    expect(p20.cap).toBeLessThanOrEqual(THREAT.endlessCapMax);
+    expect(p20.interval).toBeGreaterThanOrEqual(THREAT.endlessIntervalMin);
+    expect(p20.packMax).toBeLessThanOrEqual(THREAT.endlessPackMax);
+  });
+});
+
 // --- Gas clouds ------------------------------------------------------------------------
 describe('gas clouds', () => {
   it('poison whoever stands in them and expire', () => {
+
     const gas = new GasClouds(new THREE.Scene());
     const inCloud = { x: 1, z: 1 };
     let dmg = 0;

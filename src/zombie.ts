@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
-import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT } from './config';
+import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT, THREAT } from './config';
 import { ThrowableObject } from './world';
 import { attacksFromBehind } from './pack';
 
@@ -217,7 +217,9 @@ export class ZombieManager {
     zom.vel.x = 0;
     zom.vel.z = 0;
     zom.hp = ZOMBIE.baseHealth * hpScale * (0.85 + Math.random() * 0.3);
-    zom.speed = ZOMBIE.baseSpeed + ZOMBIE.speedPerThreat * (threat - 1) + (Math.random() - 0.5) * ZOMBIE.speedVariance;
+    // speed scaling caps at endlessSpeedCapThreat: endless Shanghai keeps
+    // growing the crowd, but a sprint always outruns the horde
+    zom.speed = ZOMBIE.baseSpeed + ZOMBIE.speedPerThreat * (Math.min(threat, THREAT.endlessSpeedCapThreat) - 1) + (Math.random() - 0.5) * ZOMBIE.speedVariance;
     // boomer scaling: a tanky, slow, wide bastard in a strained green suit
     zom.fat = fat;
     zom.radius = fat ? ZOMBIE.radius * FAT.radiusMult : ZOMBIE.radius;

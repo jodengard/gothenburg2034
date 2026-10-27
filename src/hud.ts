@@ -50,7 +50,7 @@ export class Hud {
     this.els.kills.textContent = String(s.kills);
     this.els.tricks.textContent = `Tricks: ${s.trickScore}`;
     this.els.tricks.style.display = s.trickScore > 0 ? '' : 'none';
-    // Shanghai pins the threat at 6 — the row then runs six full stars, no padding
+    // Shanghai escalates past 6 (endless mode) — the row grows with the stars
     this.els.threat.textContent = '★'.repeat(s.threatLevel) + '☆'.repeat(Math.max(0, 5 - s.threatLevel));
     this.els.threat.style.color = s.threatLevel >= 4 ? '#ff5544' : s.threatLevel >= 3 ? '#ffaa33' : '#ffd75e';
     if (s.weaponId !== this.lastWeapon) {

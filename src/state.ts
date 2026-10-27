@@ -8,7 +8,7 @@ export interface GameState {
   kills: number;
   trickScore: number; // scooter trick points (spins, tailwhips, roof tops)
   health: number;
-  threatLevel: number; // 1..5
+  threatLevel: number; // 1..5 in Gothenburg; 6+ in Shanghai's endless escalation
   highestThreat: number;
   weaponId: string;
   ammo: number; // magazine (-1 = melee / n/a)

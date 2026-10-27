@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 46 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 48 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,24 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Fat boomers (zombies-2.0 — contact-detonating boomers + shit-clouds) — verified
+## Current milestone: Shanghai endless escalation (zombies-2.0 — the stars never stop) — verified
+
+- **Shanghai threat is no longer pinned at 6**: arrival still runs the 10 s calm, then
+  the rating climbs **+1 star every 30 s forever** (`shanghaiThreatFor`, counted from
+  the first wave). Each step banners `★ N STARS — THE EXPO SURGES!` with a pack howl.
+- **More and more**: past level 5 the spawn table extrapolates (`threatParams`) —
+  pop cap +4/star (ceiling 72 for the 60 fps budget), spawn interval ×0.93/star
+  (floor 0.7 s), pack size +1 every 2 stars (cap 14). Zombie HP keeps scaling linearly;
+  speed scaling caps at threat 12 so a sprint always outruns the horde.
+- **Fixed on the way**: boomers never spawned in Shanghai (`FAT.chance[5]` was
+  undefined) — the chance table now clamps, and the soak confirms them.
+- The director's `+1e6 time credit` hack is gone: `director.update` takes a live
+  `levelOverride` instead. HUD star row simply grows past 6.
+- **Verified live**: 150 s in Shanghai — threat 6→7→8→9→10 at exactly 30 s intervals,
+  pop 31→35→40 and climbing, 5 boomers alive, 0 NaN, 0 errors, 0.151 ms/step.
+  48/48 unit tests (2 new).
+
+## Previous milestone: Fat boomers (zombies-2.0 — contact-detonating boomers + shit-clouds) — verified
 
 - **The boomer class** (`FAT` in `config.ts`, `fat` flag in `zombie.ts`): gut-bloated
   (mesh 1.5× wide, strained olive suit), 5× HP, half speed, wider hitbox. Joins packs

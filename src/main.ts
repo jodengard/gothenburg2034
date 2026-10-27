@@ -15,7 +15,7 @@ import { ViewModel } from './viewmodel';
 import { ZombieManager, Zombie } from './zombie';
 import { PackManager } from './pack';
 import { GasClouds } from './gas';
-import { Director } from './director';
+import { Director, shanghaiThreatFor } from './director';
 import { ProjectileManager } from './projectiles';
 import { Fx } from './fx';
 import { Hud } from './hud';
@@ -328,9 +328,13 @@ let inShanghai = false;
 const travel = { active: false, t: 0, toSh: true, swapped: false };
 /** Seconds before the director may spawn again (Shanghai arrival calm). */
 let spawnGrace = 0;
+/** Seconds since Shanghai arrival (endless star escalation clock). */
+let shanghaiT = 0;
+const SH_GRACE = 10; // arrival calm; the first wave lands when it ends
 
 function setActiveArena(toSh: boolean): void {
   inShanghai = toSh;
+  shanghaiT = 0;
   activeWorld = toSh ? worldSh! : world;
   traffic = toSh ? trafficSh! : trafficG;
   const src = toSh ? worldSh!.colliders : gothenburgColliders;
@@ -380,7 +384,7 @@ function doSwap(): void {
   player.yaw = activeWorld.playerStart.yaw;
   player.pitch = 0;
   player.immunity = Math.max(player.immunity, 5); // grace: traffic spares you on arrival
-  if (travel.toSh) spawnGrace = 10; // first ten seconds in Shanghai stay quiet
+  if (travel.toSh) spawnGrace = SH_GRACE; // first ten seconds in Shanghai stay quiet
   hud.setArena(travel.toSh ? 'SHANGHAI · 世博园区' : 'GÖTEBORG · KORSVÄGEN');
   hud.trick(travel.toSh ? '\u{1F68C} SHANGHAI EXPO — 世博会' : '\u{1F68C} BACK TO KORSVÄGEN');
   sfx.pickup();
@@ -1062,8 +1066,19 @@ function step(dt: number): void {
   }
   viewModel.group.visible = !player.riding;
 
-  // threat — Shanghai runs at a permanent six stars
-  state.threatLevel = inShanghai ? 6 : director.level(state.time);
+  // threat — Shanghai runs endless escalation: 6 stars on arrival, then +1
+  // every 30 s after the first wave lands; packs and caps grow along with it
+  if (inShanghai) {
+    shanghaiT += dt;
+    const t = shanghaiThreatFor(shanghaiT - SH_GRACE);
+    if (t > 6 && t > state.threatLevel) {
+      hud.trick(`\u2605 ${t} STARS — THE EXPO SURGES!`);
+      sfx.growl();
+    }
+    state.threatLevel = t;
+  } else {
+    state.threatLevel = director.level(state.time);
+  }
   state.highestThreat = Math.max(state.highestThreat, state.threatLevel);
 
   // weapons
@@ -1090,9 +1105,9 @@ function step(dt: number): void {
     sprinting: state.sprinting,
     eyeY: PLAYER.eyeHeight,
   };
-  // in Shanghai the director spawns at max level from second one (+1e6 time credit)
+  // spawn pressure follows the live threat (Shanghai's escalating override)
   if (spawnGrace > 0) spawnGrace = Math.max(0, spawnGrace - dt);
-  director.update(dt, inShanghai ? state.time + 1e6 : state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
+  director.update(dt, state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
     if (spawnGrace > 0) return; // arrival calm: the first packs simply don't show
     const members: Zombie[] = [];
     let fats = 0;
@@ -1101,7 +1116,7 @@ function step(dt: number): void {
       const oz = z + (Math.random() - 0.5) * 4;
       // boomers join the party from threat 3 on, max 2 per pack
       const fat = state.threatLevel >= 3 && fats < FAT.maxPerPack &&
-        Math.random() < FAT.chance[state.threatLevel - 1];
+        Math.random() < FAT.chance[Math.min(state.threatLevel, FAT.chance.length) - 1];
       if (fat) fats++;
       members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel, fat));
     }

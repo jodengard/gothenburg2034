@@ -20,6 +20,34 @@ export function threatLevelFor(elapsed: number): number {
   return lvl;
 }
 
+/** Shanghai endless mode: 6 stars on arrival, +1 per step once the first
+ * wave has landed (caller passes time counted from the end of the arrival
+ * grace, so negative values just mean "still calm"). */
+export function shanghaiThreatFor(sinceFirstWave: number): number {
+  return 6 + Math.floor(Math.max(0, sinceFirstWave) / THREAT.shanghaiStepTime);
+}
+
+/** Spawn pressure for any threat level, extrapolating past the level-5 table
+ * for Shanghai's endless escalation (with perf/sanity ceilings). */
+export function threatParams(level: number): {
+  cap: number; interval: number; packMin: number; packMax: number;
+} {
+  const i = Math.min(level, 5) - 1;
+  const k = Math.max(0, level - 5); // endless steps beyond the table
+  const cap = Math.min(THREAT.endlessCapMax, THREAT.popCaps[i] + THREAT.endlessCapStep * k);
+  const interval = Math.max(
+    THREAT.endlessIntervalMin,
+    THREAT.spawnIntervals[i] * Math.pow(THREAT.endlessIntervalDecay, k),
+  );
+  const bump = Math.floor(k / THREAT.endlessPackStepLevels);
+  return {
+    cap,
+    interval,
+    packMin: Math.min(THREAT.endlessPackMax - 2, THREAT.packSizes[i][0] + bump),
+    packMax: Math.min(THREAT.endlessPackMax, THREAT.packSizes[i][1] + bump),
+  };
+}
+
 export class Director {
   killCredit = 0;
   spawnTimer = 2.5; // small grace at start
@@ -69,6 +97,8 @@ export class Director {
 
   /**
    * Advance spawning. Calls spawnPack(size, x, z) when a pack should appear.
+   * levelOverride pins the pressure level (Shanghai's endless escalation);
+   * otherwise it follows the time-based director curve.
    */
   update(
     dt: number,
@@ -78,9 +108,11 @@ export class Director {
     world: World,
     rng: RNG,
     spawnPack: (size: number, x: number, z: number) => void,
+    levelOverride?: number,
   ): void {
-    const level = this.level(time);
-    const cap = THREAT.popCaps[level - 1];
+    const level = levelOverride ?? this.level(time);
+    const p = threatParams(level);
+    const cap = p.cap;
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
     if (activeCount >= cap) {
@@ -92,11 +124,10 @@ export class Director {
       this.spawnTimer = 0.8;
       return;
     }
-    const [minS, maxS] = THREAT.packSizes[level - 1];
-    const size = Math.min(maxS, minS + rng.int(maxS - minS + 1));
+    const size = Math.min(p.packMax, p.packMin + rng.int(p.packMax - p.packMin + 1));
     const room = cap - activeCount;
     spawnPack(Math.max(1, Math.min(size, room)), pt.x, pt.z);
     this.packCounter++;
-    this.spawnTimer = THREAT.spawnIntervals[level - 1] * rng.range(0.8, 1.2);
+    this.spawnTimer = p.interval * rng.range(0.8, 1.2);
   }
 }
