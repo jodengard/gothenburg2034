@@ -6,10 +6,11 @@ import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorl
 import { WeaponState, rollDrop } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, PackManager, attacksFromBehind, Pack } from '../src/pack';
-import { Zombie, PlayerView, Role } from '../src/zombie';
+import { Zombie, PlayerView, Role, ZombieManager, ZombieEvents } from '../src/zombie';
+import { GasClouds } from '../src/gas';
 import { World } from '../src/world';
 import { makePath, samplePath, distPointSeg } from '../src/traffic';
-import { THREAT, PACK } from '../src/config';
+import { THREAT, PACK, FAT, ZOMBIE } from '../src/config';
 
 // --- RNG ---------------------------------------------------------------------
 describe('RNG', () => {
@@ -347,6 +348,91 @@ describe('pack knowledge', () => {
     expect(attacksFromBehind({ pos: { x: 0, z: 5 } }, player)).toBe(true); // at the back
     expect(attacksFromBehind({ pos: { x: 0, z: -5 } }, player)).toBe(false); // in front
     expect(attacksFromBehind({ pos: { x: 5, z: 0 } }, player)).toBe(false); // dead side
+  });
+});
+
+// --- Fat boomers (the big ones) --------------------------------------------------------
+const silentEvents = (log: string[]): ZombieEvents => ({
+  onPlayerDamage: () => {},
+  onThrow: () => {},
+  onKill: () => { log.push('kill'); },
+  onHurtSound: () => {},
+  onFatExplosion: () => { log.push('boom'); },
+});
+
+describe('fat boomers', () => {
+  it('spawn as tanky, slow, wide, visibly bloated zombies', () => {
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents([]));
+    const normal = zm.spawn(0, 0, 1, 3);
+    const fat = zm.spawn(30, 0, 1, 3, true);
+    expect(fat.fat).toBe(true);
+    expect(fat.radius).toBeCloseTo(ZOMBIE.radius * FAT.radiusMult);
+    expect(fat.speed).toBeLessThan(normal.speed);
+    expect(fat.mesh.scale.x).toBeGreaterThan(1); // bloated mesh
+    // hp ratio survives the +-15 % spawn variance
+    expect(fat.hp / normal.hp).toBeGreaterThan(FAT.hpMult * 0.7);
+    zm.clearAll();
+  });
+
+  it('detonate once on player contact and die in their own blast', () => {
+    const log: string[] = [];
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents(log));
+    const fat = zm.spawn(1, 0, 1, 3, true);
+    const player: PlayerView = {
+      pos: { x: 0, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    zm.update(1 / 60, player, 3, []);
+    expect(log).toContain('boom');
+    expect(log).toContain('kill');
+    expect(fat.state).toBe('dead');
+    expect(fat.exploded).toBe(true); // corpse consumed by the blast
+    const n = log.length;
+    zm.update(1 / 60, player, 3, []);
+    expect(log.length).toBe(n); // dead boomers don't double-detonate
+    zm.clearAll();
+  });
+
+  it('never get tactical roles', () => {
+    const members = [
+      fakeZombie(9, 0), fakeZombie(11, 3), fakeZombie(-10, 2),
+      fakeZombie(13, -5), fakeZombie(14, 6), fakeZombie(-12, -4),
+    ];
+    members[0].fat = true;
+    const pack = mkPack(members);
+    const player: PlayerView = { ...fakePlayer, vel: new THREE.Vector3(8, 0, 0) };
+    for (let k = 0; k < 10; k++) {
+      const roles = computeRoles(pack, { player, threat: 5, throwablesAvailable: true, onBark: () => {} });
+      expect(roles[0]).not.toBe('flanker');
+      expect(roles[0]).not.toBe('interceptor');
+      expect(roles[0]).not.toBe('thrower');
+    }
+  });
+});
+
+// --- Gas clouds ------------------------------------------------------------------------
+describe('gas clouds', () => {
+  it('poison whoever stands in them and expire', () => {
+    const gas = new GasClouds(new THREE.Scene());
+    const inCloud = { x: 1, z: 1 };
+    let dmg = 0;
+    gas.spawn(0, 0);
+    for (let k = 0; k < 60; k++) gas.update(1 / 60, inCloud, (d) => { dmg += d; });
+    expect(dmg).toBeGreaterThan(0);
+    expect(dmg).toBeLessThan(FAT.gas.dps * 2); // 1 s of breathing ≈ one dps worth
+
+    // far away: nothing to breathe
+    let clean = 0;
+    gas.clear();
+    gas.spawn(0, 0);
+    for (let k = 0; k < 60; k++) gas.update(1 / 60, { x: 30, z: 30 }, (d) => { clean += d; });
+    expect(clean).toBe(0);
+
+    // the filth does settle eventually
+    let long = 0;
+    gas.clear();
+    gas.spawn(0, 0);
+    for (let k = 0; k < 60 * (FAT.gas.life + 1); k++) gas.update(1 / 60, inCloud, (d) => { long += d; });
+    expect(long).toBeLessThanOrEqual(FAT.gas.dps * FAT.gas.life + 0.01);
   });
 });
 

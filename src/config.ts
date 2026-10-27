@@ -146,6 +146,28 @@ export const PACK = {
   assaultCommit: 7, // m: flankers abandon the stand-off once the pack assaults
 };
 
+// The boomer class: a gut-bloated zombie that waddles at you and detonates on
+// belly contact — blast damage up close, plus a lingering shit-cloud that
+// poisons anyone dumb enough to stand in it. Zombies don't mind the gas.
+export const FAT = {
+  chance: [0, 0, 0.1, 0.12, 0.16] as const, // per threat level (1..5)
+  maxPerPack: 2, // two boomers per pack is already a war crime
+  hpMult: 5,
+  speedMult: 0.5,
+  radiusMult: 1.7,
+  touchDist: 2.1, // belly-to-player distance that sets it off (m)
+  blastRadius: 4.5, // blast damage falloff radius (m)
+  blastDamage: 30, // point-blank; falls off linearly to 45 % at the edge
+  gas: {
+    radius: 4.5, // player inside this radius breathes the filth
+    life: 7, // seconds the cloud hangs in the air
+    dps: 6, // player damage per second inside the cloud
+    tick: 0.6, // damage tick period (s)
+    maxClouds: 4, // simultaneous clouds (pool cap)
+    puffs: 14, // meshes per cloud
+  },
+};
+
 export interface WeaponDef {
   id: string;
   name: string;

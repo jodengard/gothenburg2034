@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 40 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 44 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,24 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Zombies 2.0 (zombies-2.0 branch — pack knowledge, audible tactics, real preparation) — verified
+## Current milestone: Fat boomers (zombies-2.0 — contact-detonating boomers + shit-clouds) — verified
+
+- **The boomer class** (`FAT` in `config.ts`, `fat` flag in `zombie.ts`): gut-bloated
+  (mesh 1.5× wide, strained olive suit), 5× HP, half speed, wider hitbox. Joins packs
+  from threat 3 (10–16 % per member, max 2 per pack, never scooter riders, never
+  tactical roles — they just shamble at you).
+- **Contact detonation**: belly-to-player contact (2.1 m, LOS required) blows the gut —
+  up to 30 blast damage with falloff, screen shake, gore, the corpse consumed
+  (`exploded`), and 15 blast damage to nearby zombies (the horde eats its own).
+  Kill them at range; hugging one is the mistake.
+- **Shit-clouds** (`src/gas.ts`): a 4.5 m, 7 s pool of 4 swirling translucent green
+  clouds (14 puffs each, spread + rise + fade). Standing in one costs 6 hp/s in
+  0.6 s ticks with a cough; zombies don't mind — they already smell like this.
+- **Verified live**: 22.3 blast damage at exactly the predicted 2.1 m falloff point,
+  18 gas damage over 3 s of breathing, 5-min threat-4 soak: 21 organic detonations,
+  0 NaN, 0 errors. 44/44 unit tests (4 new).
+
+## Previous milestone: Zombies 2.0 (zombies-2.0 branch — pack knowledge, audible tactics, real preparation) — verified
 
 Re-audited the AI against the original pack-intelligence spec and closed every gap:
 

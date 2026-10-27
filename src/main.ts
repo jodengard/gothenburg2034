@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY, FAT } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -14,6 +14,7 @@ import { WeaponState, rollDrop, RELOAD_TIME } from './weapons';
 import { ViewModel } from './viewmodel';
 import { ZombieManager, Zombie } from './zombie';
 import { PackManager } from './pack';
+import { GasClouds } from './gas';
 import { Director } from './director';
 import { ProjectileManager } from './projectiles';
 import { Fx } from './fx';
@@ -204,6 +205,7 @@ const highway = buildHighway(scene);
 const trafficG = new Traffic(scene, world);
 let traffic = trafficG; // the Traffic of the arena you are currently in (see travel below)
 const fx = new Fx(scene);
+const gas = new GasClouds(scene);
 const hud = new Hud();
 const player = new Player(camera, world.colliders);
 const weapons = new WeaponState();
@@ -258,6 +260,22 @@ const zombies = new ZombieManager(scene, world.colliders, {
   },
   onHurtSound() {
     sfx.zombieHurt();
+  },
+  onFatExplosion(x, z) {
+    // the gut lets go: blast + filth + a lingering shit-cloud
+    fx.explosion(x, 1.1, z);
+    fx.gore(x, 1.2, z);
+    sfx.explosion();
+    sfx.gore();
+    sfx.gasBurst();
+    fx.addShake(0.9);
+    gas.spawn(x, z);
+    const d = Math.hypot(player.pos.x - x, player.pos.z - z);
+    if (d < FAT.blastRadius) {
+      const fall = 1 - d / FAT.blastRadius; // point-blank hurts most
+      if (player.damage(FAT.blastDamage * (0.45 + 0.55 * fall), x, z)) sfx.playerHurt();
+    }
+    zombies.blast(x, z, FAT.blastRadius, FAT.blastDamage * 0.5); // the horde eats its own
   },
 });
 
@@ -352,6 +370,7 @@ function doSwap(): void {
   if (travel.toSh) sfx.musicStart(); else sfx.musicStop(); // Expo street music
   zombies.clearAll();
   projectiles.clearAll();
+  gas.clear();
   clearPickups();
   clearCarrots();
   helpers.clear(); // helpers would be stranded across town
@@ -829,6 +848,7 @@ function startGame(): void {
     zombies.clearAll();
     traffic.reset(); // rebuild the scooter fleet + riders (old riders died in clearAll)
     projectiles.clearAll();
+    gas.clear();
     packs.reset();
     director.reset();
     clearPickups();
@@ -1070,10 +1090,15 @@ function step(dt: number): void {
   director.update(dt, inShanghai ? state.time + 1e6 : state.time, zombies.count, { pos: player.pos, yaw: player.yaw }, activeWorld, rng, (size, x, z) => {
     if (spawnGrace > 0) return; // arrival calm: the first packs simply don't show
     const members: Zombie[] = [];
+    let fats = 0;
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;
       const oz = z + (Math.random() - 0.5) * 4;
-      members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel));
+      // boomers join the party from threat 3 on, max 2 per pack
+      const fat = state.threatLevel >= 3 && fats < FAT.maxPerPack &&
+        Math.random() < FAT.chance[state.threatLevel - 1];
+      if (fat) fats++;
+      members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel, fat));
     }
     packs.createPack(members);
   });
@@ -1085,6 +1110,13 @@ function step(dt: number): void {
     onBark: () => sfx.growl(), // the pack howls when it spots you / pushes — audible tactics
   });
   zombies.update(dt, playerView, state.threatLevel, activeWorld.throwables);
+  gas.update(dt, player.pos, (dmg, x, z) => {
+    // breathing in someone's remains is not pleasant
+    if (player.damage(dmg, x, z)) {
+      sfx.cough();
+      fx.addShake(0.12);
+    }
+  });
 
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
   updatePickups(dt);
@@ -1136,7 +1168,7 @@ requestAnimationFrame(frame);
 
 // expose for debugging/tests
 (window as unknown as Record<string, unknown>).__game = {
-  state, player, weapons, zombies, packs, director, world, pickups, projectiles,
+  state, player, weapons, zombies, packs, director, world, pickups, projectiles, gas,
   get traffic() { return traffic; }, // follows the active arena
   helpers, carrots,
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,

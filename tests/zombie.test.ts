@@ -12,6 +12,7 @@ function makeManager() {
     onThrow: () => undefined,
     onKill: () => undefined,
     onHurtSound: () => undefined,
+    onFatExplosion: () => undefined,
   };
   const colliders = [makeAABB(20, 0, 6, 6, 5)]; // a wall to the +X side
   const mgr = new ZombieManager(scene, colliders, events);

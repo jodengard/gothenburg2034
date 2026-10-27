@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
-import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY } from './config';
+import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT } from './config';
 import { ThrowableObject } from './world';
 import { attacksFromBehind } from './pack';
 
@@ -64,6 +64,10 @@ export interface Zombie {
   /** True while the pack is assaulting (fresh knowledge + pressure): flankers
    * drop the stand-off and commit. */
   assault: boolean;
+  /** Boomer class: gut-bloated, slow, detonates on player contact. */
+  fat: boolean;
+  /** Collision radius — fat zombies are wider (raycast + world push). */
+  radius: number;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
   ride: RideAnchor | null;
   /** Traffic hit cooldown: a vehicle that just clipped this zombie cannot
@@ -98,6 +102,8 @@ export interface ZombieEvents {
   onThrow(pos: THREE.Vector3, vel: THREE.Vector3, obj: ThrowableObject): void;
   onKill(z: Zombie): void;
   onHurtSound(z: Zombie): void;
+  /** A fat zombie detonated on player contact: blast + gas cloud at (x, z). */
+  onFatExplosion(x: number, z: number): void;
 }
 
 // Shared geometry & materials -----------------------------------------------
@@ -117,6 +123,8 @@ const CLOTHES = [
   new THREE.MeshStandardMaterial({ color: 0x3a3a44, roughness: 0.9 }),
 ];
 const FLASH = new THREE.MeshStandardMaterial({ color: 0xffdddd, emissive: 0x661111 });
+// the fat ones wear what's left of an elasticated waistband
+const FAT_SUIT = new THREE.MeshStandardMaterial({ color: 0x4e5a2a, roughness: 0.95 });
 
 let nextId = 1;
 
@@ -190,7 +198,7 @@ export class ZombieManager {
     this.active = [];
   }
 
-  spawn(x: number, z: number, packId: number, threat: number): Zombie {
+  spawn(x: number, z: number, packId: number, threat: number, fat = false): Zombie {
     let zom = this.pool.pop();
     if (!zom) {
       const parts = buildMesh();
@@ -199,7 +207,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -210,6 +218,18 @@ export class ZombieManager {
     zom.vel.z = 0;
     zom.hp = ZOMBIE.baseHealth * hpScale * (0.85 + Math.random() * 0.3);
     zom.speed = ZOMBIE.baseSpeed + ZOMBIE.speedPerThreat * (threat - 1) + (Math.random() - 0.5) * ZOMBIE.speedVariance;
+    // boomer scaling: a tanky, slow, wide bastard in a strained green suit
+    zom.fat = fat;
+    zom.radius = fat ? ZOMBIE.radius * FAT.radiusMult : ZOMBIE.radius;
+    if (fat) {
+      zom.hp *= FAT.hpMult;
+      zom.speed *= FAT.speedMult;
+    }
+    const suit = fat ? FAT_SUIT : CLOTHES[zom.id % CLOTHES.length];
+    zom.bodyMat = suit;
+    zom.bodyMesh.material = suit;
+    zom.legL.material = suit;
+    zom.legR.material = suit;
     zom.state = 'approach';
     zom.role = 'pursuer';
     zom.packId = packId;
@@ -242,7 +262,7 @@ export class ZombieManager {
     zom.lodLevel = 0;
     zom.mesh.position.set(x, 0, z);
     zom.mesh.rotation.set(0, 0, 0);
-    zom.mesh.scale.setScalar(1);
+    zom.mesh.scale.set(fat ? 1.5 : 1, fat ? 1.22 : 1, fat ? 1.5 : 1); // bloated, or reset for pool reuse
     this.scene.add(zom.mesh);
     this.active.push(zom);
     return zom;
@@ -279,12 +299,30 @@ export class ZombieManager {
     return false;
   }
 
+  /** Contact detonation: the gut lets go — the body is consumed by its own
+   * blast (exploded=true hides the corpse, gore flies, gas cloud follows). */
+  private fatBoom(z: Zombie): void {
+    z.exploded = true;
+    this.kill(z);
+    this.events.onFatExplosion(z.pos.x, z.pos.z);
+  }
+
+  /** Area damage from a fat-zombie blast: the horde eats its own. */
+  blast(x: number, z: number, radius: number, dmg: number): void {
+    for (const q of this.active) {
+      if (q.state === 'dead') continue;
+      const d = Math.hypot(q.pos.x - x, q.pos.z - z);
+      if (d < radius) this.damage(q, dmg * (1 - 0.6 * (d / radius)));
+    }
+  }
+
   private kill(z: Zombie): void {
     z.state = 'dead';
     z.deadT = 0;
     z.fallDir = Math.random() < 0.5 ? 1 : -1;
     // Fatality: a player kill detonates the corpse — headshots always, others sometimes.
-    z.exploded = z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance);
+    // (fatBoom pre-sets exploded: the body is consumed by its own blast)
+    z.exploded = z.exploded || (z.lastHitByPlayer && (z.lastHitHead || Math.random() < FATALITY.chance));
     z.wasRiding = z.ride !== null; // carrot drops key off this before we clear ride
     if (z.ride) {
       z.ride = null; // tumble off the vehicle; traffic notices and drops it
@@ -315,7 +353,7 @@ export class ZombieManager {
     let best: { z: Zombie; dist: number } | null = null;
     for (const z of this.active) {
       if (z.state === 'dead') continue;
-      const t = rayCircle2D(o, d2, z.pos, ZOMBIE.radius + 0.12);
+      const t = rayCircle2D(o, d2, z.pos, z.radius + 0.12);
       if (t === null || t > maxDist) continue;
       const y = origin.y + slope * t;
       if (y < 0 || y > ZOMBIE.height + 0.15) continue;
@@ -342,7 +380,7 @@ export class ZombieManager {
       const dx = z.pos.x - origin.x;
       const dz = z.pos.z - origin.z;
       const d = Math.hypot(dx, dz);
-      if (d > range + ZOMBIE.radius) continue;
+      if (d > range + z.radius) continue;
       if (d > 0.001) {
         const dot = (dx / d) * flatDir.x + (dz / d) * flatDir.z;
         if (dot < Math.cos(arcRad)) continue;
@@ -393,7 +431,7 @@ export class ZombieManager {
         z.hitFlash -= dt;
         if (z.hitFlash <= 0) {
           z.hitFlash = 0;
-          z.bodyMat = CLOTHES[z.id % CLOTHES.length];
+          z.bodyMat = z.fat ? FAT_SUIT : CLOTHES[z.id % CLOTHES.length];
           z.bodyMesh.material = z.bodyMat;
         }
       }
@@ -465,6 +503,14 @@ export class ZombieManager {
       z.staggerT -= adt;
       if (z.staggerT <= 0) z.state = 'approach';
       this.integrate(z, adt, 0.3);
+      return;
+    }
+
+    // fat zombie: belly-to-player contact detonates the gut — no swing,
+    // just a very large, very final hug (dodgeable: it waddles, and the
+    // blast radius is smaller than its turn radius is embarrassing)
+    if (z.fat && z.los && dist < FAT.touchDist) {
+      this.fatBoom(z);
       return;
     }
 
@@ -581,7 +627,7 @@ export class ZombieManager {
     const flank = (z.role === 'flanker' || z.role === 'interceptor') && attacksFromBehind(z, player);
     const reach = ZOMBIE.meleeRange + (flank ? PACK.flankBonusRange : 0);
     const canAttack = z.attackCd <= 0 && dist < reach && z.los;
-    if (canAttack && (z.role === 'swarm' || z.role === 'pursuer' || z.role === 'interceptor' || flank || dist < 2.2)) {
+    if (!z.fat && canAttack && (z.role === 'swarm' || z.role === 'pursuer' || z.role === 'interceptor' || flank || dist < 2.2)) {
       z.state = 'windupAttack';
       z.stateT = ZOMBIE.windupTime;
       return;
@@ -778,7 +824,7 @@ export class ZombieManager {
     z.pos.z += z.vel.z * dt * moveScale;
     z.vel.x *= Math.max(0, 1 - dt * 4);
     z.vel.z *= Math.max(0, 1 - dt * 4);
-    resolveCircleWorld(this.colliders, z.pos, ZOMBIE.radius);
+    resolveCircleWorld(this.colliders, z.pos, z.radius);
     z.mesh.position.set(z.pos.x, z.mesh.position.y, z.pos.z);
     z.mesh.rotation.y = z.facing;
   }

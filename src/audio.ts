@@ -160,6 +160,17 @@ export const sfx = {
     playNoise(0.35, 260, 0.7, 0.7);
     playNoise(0.18, 1400, 1.1, 0.3);
   },
+  gasBurst(): void {
+    // the fat one lets go: a wet thump and a long, stinky hiss
+    playTone(40, 0.5, 0.7, 'sine', -18);
+    playNoise(0.7, 180, 0.5, 0.55);
+    playNoise(1.2, 900, 0.25, 0.12);
+  },
+  cough(): void {
+    // breathing in the cloud
+    playNoise(0.14, 500, 1.8, 0.35);
+    playTone(140, 0.12, 0.18, 'sawtooth', -60);
+  },
   zombieHurt(): void {
     playTone(160 + Math.random() * 60, 0.25, 0.2, 'sawtooth', -80);
     playNoise(0.2, 400, 1.0, 0.2);
