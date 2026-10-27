@@ -462,7 +462,7 @@ function clearPickups(): void {
   pickups.length = 0;
 }
 
-// --- Carrots: dropped by zombies, walked over, summon a bunny helper --------
+// --- Carrots: dropped by zombies, walked over: +20 % HP and a bunny helper --
 const carrots: { pos: THREE.Vector3; mesh: THREE.Group }[] = [];
 
 function spawnCarrot(x: number, z: number): void {
@@ -504,8 +504,13 @@ function updateCarrots(dt: number): void {
       scene.remove(c.mesh);
       carrots.splice(i, 1);
       helpers.spawn(c.pos.x, c.pos.z);
+      // carrots are healthy: also restores a slice of max HP
+      const healed = Math.min(PLAYER.maxHealth, player.health + PLAYER.maxHealth * BUNNY.healFraction) - player.health;
+      player.health += healed;
       sfx.pickup();
-      hud.trick('\u{1F955} BUNNY HELPER!');
+      hud.trick(healed > 0.5
+        ? `\u{1F955} BUNNY HELPER! +${Math.round(healed)} HP`
+        : '\u{1F955} BUNNY HELPER!');
     }
   }
 }
@@ -1171,6 +1176,7 @@ requestAnimationFrame(frame);
   state, player, weapons, zombies, packs, director, world, pickups, projectiles, gas,
   get traffic() { return traffic; }, // follows the active arena
   helpers, carrots,
+  spawnCarrot, // debug: drop a carrot at (x, z)
   renderer, camera, scene, hud, touch, fx, halloween, rabbit,
   step, fireWeapon, restart, scooterInteract,
   travel, island: SH_ISLAND, noodle,

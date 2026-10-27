@@ -37,6 +37,9 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 - **Verified live**: 22.3 blast damage at exactly the predicted 2.1 m falloff point,
   18 gas damage over 3 s of breathing, 5-min threat-4 soak: 21 organic detonations,
   0 NaN, 0 errors. 44/44 unit tests (4 new).
+- **Follow-up — carrots heal**: walking over a carrot now also restores 20 % of max HP
+  (`BUNNY.healFraction`) on top of summoning the bunny helper; the trick banner shows the
+  healed amount and it never overheals past max. Verified live: 50 → 70 HP, 100 → 100.
 
 ## Previous milestone: Zombies 2.0 (zombies-2.0 branch — pack knowledge, audible tactics, real preparation) — verified
 
