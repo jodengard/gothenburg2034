@@ -488,6 +488,29 @@ describe('shanghai escalation', () => {
     expect(p20.interval).toBeGreaterThanOrEqual(THREAT.endlessIntervalMin);
     expect(p20.packMax).toBeLessThanOrEqual(THREAT.endlessPackMax);
   });
+  it('director.update honors the level override (escalation wiring)', () => {
+    const d = new Director();
+    const world = {
+      colliders: [], surfaces: [], throwables: [], playerStart: { x: 0, z: 0, yaw: 0 },
+      isSpawnValid: () => true, tramRoutes: [], busRoutes: [], carRoutes: [], lamps: [],
+    } as unknown as World;
+    const rng = {
+      range: (a: number, b: number) => a + Math.random() * (b - a),
+      int: (n: number) => Math.floor(Math.random() * n),
+      chance: (p: number) => Math.random() < p,
+    } as unknown as RNG;
+    const pv = { pos: { x: 0, z: 0 }, yaw: 0 };
+    // override 10 over 10 s: endless packs are [8,10]
+    const big: number[] = [];
+    for (let k = 0; k < 600; k++) d.update(1 / 60, 0, 0, pv, world, rng, (s) => { big.push(s); }, 10);
+    expect(big.length).toBeGreaterThanOrEqual(5);
+    expect(Math.min(...big)).toBeGreaterThanOrEqual(8);
+    // no override at time 0: time-based level 1 packs are [3,5]
+    const d2 = new Director();
+    const small: number[] = [];
+    for (let k = 0; k < 600; k++) d2.update(1 / 60, 0, 0, pv, world, rng, (s) => { small.push(s); });
+    expect(Math.max(...small)).toBeLessThanOrEqual(5);
+  });
 });
 
 // --- Gas clouds ------------------------------------------------------------------------

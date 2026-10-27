@@ -1121,7 +1121,7 @@ function step(dt: number): void {
       members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel, fat));
     }
     packs.createPack(members);
-  });
+  }, state.threatLevel);
 
   const throwablesAvailable =
     state.threatLevel >= 3 && activeWorld.throwables.some((o: ThrowableObject) => !o.taken);

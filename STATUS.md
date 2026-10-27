@@ -35,8 +35,14 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 - The director's `+1e6 time credit` hack is gone: `director.update` takes a live
   `levelOverride` instead. HUD star row simply grows past 6.
 - **Verified live**: 150 s in Shanghai — threat 6→7→8→9→10 at exactly 30 s intervals,
-  pop 31→35→40 and climbing, 5 boomers alive, 0 NaN, 0 errors, 0.151 ms/step.
-  48/48 unit tests (2 new).
+  0 NaN, 0 errors. 48/48 unit tests (2 new).
+- **Follow-up — the escalation was cosmetic, now it overwhelms**: the first cut never
+  passed `state.threatLevel` into `director.update` (optional arg, tsc silent), so the
+  director kept spawning at the time-based level (~41 cap) no matter the stars. Fixed,
+  plus a wiring regression test (override 10 must spawn [8,10]-packs). Re-soak: pop
+  56 on arrival, pinned at cap every star — 60→72 by star 13, packs of 7–11 landing
+  ~every 1.2 s. 0.298 ms/step at 72 zombies. The Expo is now a wall of bodies; the bus
+  home stops being optional. 49/49 tests.
 
 ## Previous milestone: Fat boomers (zombies-2.0 — contact-detonating boomers + shit-clouds) — verified
 
