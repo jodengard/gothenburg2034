@@ -5,11 +5,11 @@ import { RNG } from '../src/rng';
 import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash, invalidateColliderGrid } from '../src/collision';
 import { WeaponState, rollDrop } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
-import { computeRoles, Pack } from '../src/pack';
+import { computeRoles, PackManager, attacksFromBehind, Pack } from '../src/pack';
 import { Zombie, PlayerView, Role } from '../src/zombie';
 import { World } from '../src/world';
 import { makePath, samplePath, distPointSeg } from '../src/traffic';
-import { THREAT } from '../src/config';
+import { THREAT, PACK } from '../src/config';
 
 // --- RNG ---------------------------------------------------------------------
 describe('RNG', () => {
@@ -229,7 +229,10 @@ describe('director', () => {
 
 // --- Pack roles ---------------------------------------------------------------------
 function fakeZombie(x: number, z: number, state = 'approach', role: Role = 'pursuer'): Zombie {
-  return { pos: { x, z }, state, role, carrying: null } as unknown as Zombie;
+  return { pos: { x, z }, state, role, carrying: null, los: false } as unknown as Zombie;
+}
+function mkPack(members: Zombie[]): Pack {
+  return { id: 1, members, reassignT: 0, known: { x: 0, z: 0 }, knownT: Infinity, assault: false, barkT: 0 };
 }
 const fakePlayer: PlayerView = {
   pos: { x: 0, z: 0 },
@@ -245,7 +248,7 @@ describe('pack roles', () => {
       fakeZombie(9, 0), fakeZombie(10, 2), fakeZombie(-9, 3),
       fakeZombie(12, -4), fakeZombie(-11, 5), fakeZombie(14, 8),
     ];
-    const pack: Pack = { id: 1, members, reassignT: 0 };
+    const pack = mkPack(members);
     const roles = computeRoles(pack, { player: fakePlayer, threat: 2, throwablesAvailable: false });
     expect(roles.filter((r) => r === 'flanker').length).toBeGreaterThanOrEqual(1);
     expect(roles.filter((r) => r === 'pursuer').length).toBeGreaterThanOrEqual(1);
@@ -257,7 +260,7 @@ describe('pack roles', () => {
       fakeZombie(4, 0), fakeZombie(6, 2), fakeZombie(-5, 3),
       fakeZombie(10, -4), fakeZombie(-10, 5), fakeZombie(12, 8),
     ];
-    const pack: Pack = { id: 1, members, reassignT: 0 };
+    const pack = mkPack(members);
     const roles = computeRoles(pack, { player: fakePlayer, threat: 2, throwablesAvailable: false });
     expect(roles.filter((r) => r === 'swarm').length).toBeGreaterThanOrEqual(3);
     expect(roles.filter((r) => r === 'flanker').length).toBeGreaterThanOrEqual(1);
@@ -265,16 +268,85 @@ describe('pack roles', () => {
   });
   it('assigns a thrower at threat 3 when objects exist', () => {
     const members = [fakeZombie(8, 0), fakeZombie(10, 4), fakeZombie(-9, -6)];
-    const pack: Pack = { id: 1, members, reassignT: 0 };
+    const pack = mkPack(members);
     const roles = computeRoles(pack, { player: fakePlayer, threat: 3, throwablesAvailable: true });
     expect(roles).toContain('thrower');
   });
   it('assigns an interceptor when the player is sprinting', () => {
     const members = [fakeZombie(9, 0), fakeZombie(11, 3), fakeZombie(-10, 2), fakeZombie(13, -5)];
-    const pack: Pack = { id: 1, members, reassignT: 0 };
+    const pack = mkPack(members);
     const player: PlayerView = { ...fakePlayer, vel: new THREE.Vector3(8, 0, 0) };
-    const roles = computeRoles(pack, { player, threat: 2, throwablesAvailable: false });
+    const roles = computeRoles(pack, { player, threat: 2, throwablesAvailable: false, onBark: () => {} });
     expect(roles).toContain('interceptor');
+  });
+});
+
+// --- Pack knowledge (zombies 2.0) ----------------------------------------------------
+describe('pack knowledge', () => {
+  const barkCtx = (player: PlayerView, barks: { n: number }) => ({
+    player, threat: 2, throwablesAvailable: false, onBark: () => { barks.n++; },
+  });
+
+  it('a sighting is shared with the pack as a fuzzed order, with a howl', () => {
+    const m1 = fakeZombie(9, 0);
+    m1.los = true;
+    const m2 = fakeZombie(12, 4);
+    const pm = new PackManager();
+    const pack = pm.createPack([m1, m2]);
+    const barks = { n: 0 };
+    pm.update(0.7, barkCtx(fakePlayer, barks));
+    expect(pack.knownT).toBe(0);
+    expect(m2.orderFresh).toBe(true);
+    expect(m2.order).not.toBeNull();
+    // fuzzed, never a perfect hive mind
+    expect(Math.hypot(m2.order!.x, m2.order!.z)).toBeLessThanOrEqual(PACK.orderNoise + 0.001);
+    expect(barks.n).toBe(1); // the fresh sighting howls once
+  });
+
+  it('orders go stale when nobody has eyes on the player', () => {
+    const m1 = fakeZombie(9, 0);
+    m1.los = true;
+    const pm = new PackManager();
+    const pack = pm.createPack([m1]);
+    const barks = { n: 0 };
+    pm.update(0.7, barkCtx(fakePlayer, barks));
+    expect(m1.orderFresh).toBe(true);
+    m1.los = false;
+    pm.update(PACK.knowledgeFresh + 0.1, barkCtx(fakePlayer, barks));
+    expect(m1.orderFresh).toBe(false);
+    expect(m1.order).toBeNull();
+    expect(pack.assault).toBe(false);
+  });
+
+  it('assault engages with pressure + knowledge and barks once', () => {
+    const m1 = fakeZombie(4, 0); // inside the pressure radius
+    m1.los = true;
+    const m2 = fakeZombie(12, 4);
+    const pm = new PackManager();
+    const pack = pm.createPack([m1, m2]);
+    const barks = { n: 0 };
+    pm.update(0.7, barkCtx(fakePlayer, barks));
+    expect(pack.assault).toBe(true);
+    expect(m2.assault).toBe(true);
+    expect(barks.n).toBe(1); // sighting howl; assault howl is throttled behind it
+  });
+
+  it('a distant pack with no sighting never gets orders', () => {
+    const m1 = fakeZombie(40, 0);
+    const pm = new PackManager();
+    pm.createPack([m1]);
+    const barks = { n: 0 };
+    pm.update(0.7, barkCtx(fakePlayer, barks));
+    expect(m1.orderFresh).toBe(false);
+    expect(m1.order).toBeNull();
+    expect(barks.n).toBe(0);
+  });
+
+  it('attacksFromBehind detects the flank', () => {
+    const player: PlayerView = { ...fakePlayer, yaw: 0 }; // facing -z
+    expect(attacksFromBehind({ pos: { x: 0, z: 5 } }, player)).toBe(true); // at the back
+    expect(attacksFromBehind({ pos: { x: 0, z: -5 } }, player)).toBe(false); // in front
+    expect(attacksFromBehind({ pos: { x: 5, z: 0 } }, player)).toBe(false); // dead side
   });
 });
 

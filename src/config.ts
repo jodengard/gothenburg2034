@@ -131,6 +131,19 @@ export const PACK = {
   swarmRadius: 7.5, // pack pressure radius (m) that triggers swarm attacks
   throwRange: 16, // thrower acts if player within this distance
   throwObjectSearchRadius: 14,
+  // --- Zombies 2.0: shared pack knowledge & opportunity ---
+  // A member with line of sight "howls" the player's position to the pack.
+  // The shared guess is fuzzed and decays, so the pack is a hunting crew,
+  // not a hive mind — and the howl is audible, which is the justification
+  // for tactics that use it (spec: no magic knowledge through walls).
+  knowledgeFresh: 6, // seconds the pack's shared sighting stays trusted
+  orderNoise: 1.5, // m of fuzz on the shared position
+  barkCooldown: 4, // s between a pack's coordination howls
+  throwLeadTime: 0.35, // s the thrower leads a moving target
+  throwLeadMax: 2.5, // m cap on that lead — sprinting sideways beats the throw
+  flankBonusRange: 1.1, // m extra melee reach when attacking from behind
+  behindDot: -0.25, // dot(attack bearing, player facing) below which a hit is a flank
+  assaultCommit: 7, // m: flankers abandon the stand-off once the pack assaults
 };
 
 export interface WeaponDef {

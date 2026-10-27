@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
 import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY } from './config';
 import { ThrowableObject } from './world';
+import { attacksFromBehind } from './pack';
 
 export type ZombieState =
   | 'idle' | 'search' | 'approach' | 'flank' | 'intercept'
@@ -55,6 +56,14 @@ export interface Zombie {
   unstickSide: number;
   targetObj: ThrowableObject | null;
   carrying: ThrowableObject | null;
+  /** Pack orders (Zombies 2.0): the crew's shared guess where the player is,
+   * or null when the pack's knowledge went stale. Tactical roles steer on
+   * this instead of the player's live position — no magic through walls. */
+  order: Vec2 | null;
+  orderFresh: boolean;
+  /** True while the pack is assaulting (fresh knowledge + pressure): flankers
+   * drop the stand-off and commit. */
+  assault: boolean;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
   ride: RideAnchor | null;
   /** Traffic hit cooldown: a vehicle that just clipped this zombie cannot
@@ -190,7 +199,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -215,6 +224,9 @@ export class ZombieManager {
     zom.unstickT = 0;
     zom.targetObj = null;
     zom.carrying = null;
+    zom.order = null;
+    zom.orderFresh = false;
+    zom.assault = false;
     zom.ride = null;
     zom.trafficCd = 0;
     zom.wasRiding = false;
@@ -279,7 +291,14 @@ export class ZombieManager {
       z.mesh.position.y = 0;
     }
     if (z.carrying) {
-      z.carrying.taken = false; // drop the object where it died
+      // drop the carried object at the corpse: visible and pickable again
+      const o = z.carrying;
+      o.taken = false;
+      o.pos.x = z.pos.x;
+      o.pos.z = z.pos.z;
+      o.mesh.position.set(z.pos.x, 0.08, z.pos.z);
+      o.mesh.rotation.set(0, 0, 0);
+      o.mesh.visible = true;
       z.carrying = null;
     }
     this.events.onKill(z);
@@ -512,12 +531,25 @@ export class ZombieManager {
         if (z.stateT <= 0 && z.carrying) {
           const obj = z.carrying;
           z.carrying = null;
-          const d = Math.hypot(toPlayerX, toPlayerZ) || 1;
+          obj.mesh.visible = false; // the projectile clone flies; this one lands later
+          // lead a moving target a touch (capped): standing still is a
+          // guaranteed hit, sprinting sideways beats the throw — dodging
+          // becomes a choice, not a coin flip
+          let lx = player.vel.x * PACK.throwLeadTime;
+          let lz = player.vel.z * PACK.throwLeadTime;
+          const ll = Math.hypot(lx, lz);
+          if (ll > PACK.throwLeadMax) {
+            lx *= PACK.throwLeadMax / ll;
+            lz *= PACK.throwLeadMax / ll;
+          }
+          const ax = toPlayerX + lx;
+          const az = toPlayerZ + lz;
+          const d = Math.hypot(ax, az) || 1;
           const speed = THROWABLE.speed;
           const vel = new THREE.Vector3(
-            (toPlayerX / d) * speed,
+            (ax / d) * speed,
             3.2 + d * 0.12, // lob compensation
-            (toPlayerZ / d) * speed,
+            (az / d) * speed,
           );
           this.events.onThrow(
             new THREE.Vector3(z.pos.x, 1.7, z.pos.z),
@@ -543,9 +575,13 @@ export class ZombieManager {
 
     // --- active states: idle / search / approach / flank / intercept / grab-pick ---
 
-    // decide whether to attack
-    const canAttack = z.attackCd <= 0 && dist < ZOMBIE.meleeRange && z.los;
-    if (canAttack && (z.role === 'swarm' || z.role === 'pursuer' || z.role === 'interceptor' || dist < 2.2)) {
+    // decide whether to attack — flankers and interceptors that actually
+    // made it behind the player's back hit with extra reach: the observable
+    // payoff of the pack's maneuver (turn around or eat the grab)
+    const flank = (z.role === 'flanker' || z.role === 'interceptor') && attacksFromBehind(z, player);
+    const reach = ZOMBIE.meleeRange + (flank ? PACK.flankBonusRange : 0);
+    const canAttack = z.attackCd <= 0 && dist < reach && z.los;
+    if (canAttack && (z.role === 'swarm' || z.role === 'pursuer' || z.role === 'interceptor' || flank || dist < 2.2)) {
       z.state = 'windupAttack';
       z.stateT = ZOMBIE.windupTime;
       return;
@@ -584,6 +620,12 @@ export class ZombieManager {
       z.state = 'approach';
     }
 
+    // what the crew knows: the live position only while someone in the pack
+    // has eyes on you right now; otherwise the shared howled guess, then
+    // this zombie's own memory — tactical roles never cheat through walls
+    const kx = z.los ? player.pos.x : z.orderFresh && z.order ? z.order.x : knowsX;
+    const kz = z.los ? player.pos.z : z.orderFresh && z.order ? z.order.z : knowsZ;
+
     // role-driven target
     let tx = knowsX;
     let tz = knowsZ;
@@ -593,14 +635,12 @@ export class ZombieManager {
       tx = knowsX + Math.cos(a) * 4;
       tz = knowsZ + Math.sin(a) * 4;
     } else if (z.role === 'flanker') {
-      const px = player.pos.x;
-      const pz = player.pos.z;
-      let bx = z.pos.x - px;
-      let bz = z.pos.z - pz;
+      let bx = z.pos.x - kx;
+      let bz = z.pos.z - kz;
       const bd = Math.hypot(bx, bz) || 1;
       bx /= bd;
       bz /= bd;
-      // rotate around player toward their flank (behind their back)
+      // rotate around the target toward their flank (behind their back)
       const backX = -Math.sin(player.yaw);
       const backZ = -Math.cos(player.yaw);
       const side = bx * backZ - bz * backX > 0 ? 1 : -1;
@@ -610,25 +650,28 @@ export class ZombieManager {
       const rx = bx * cos - bz * sin;
       const rz = bx * sin + bz * cos;
       const stand = Math.max(3.5, Math.min(bd, PACK.flankDist));
-      tx = px + rx * stand;
-      tz = pz + rz * stand;
-      if (bd < 4.5) {
-        tx = px;
-        tz = pz;
+      tx = kx + rx * stand;
+      tz = kz + rz * stand;
+      // commit to the hit up close — or the moment the pack assaults
+      if (bd < 4.5 || (z.assault && bd < PACK.assaultCommit)) {
+        tx = kx;
+        tz = kz;
       }
     } else if (z.role === 'interceptor') {
+      // velocity is only known while seen (by this zombie or the pack)
       const pv = player.vel;
-      const lead = Math.min(22, PACK.interceptLeadTime * Math.hypot(pv.x, pv.z));
+      const seen = z.los || z.orderFresh;
+      const lead = seen ? Math.min(22, PACK.interceptLeadTime * Math.hypot(pv.x, pv.z)) : 0;
       if (lead > 1.5) {
-        tx = player.pos.x + pv.x * PACK.interceptLeadTime;
-        tz = player.pos.z + pv.z * PACK.interceptLeadTime;
+        tx = kx + pv.x * PACK.interceptLeadTime;
+        tz = kz + pv.z * PACK.interceptLeadTime;
       } else {
-        tx = knowsX;
-        tz = knowsZ;
+        tx = kx;
+        tz = kz;
       }
     } else if (z.role === 'swarm' || z.role === 'pursuer') {
-      tx = z.los ? player.pos.x : knowsX;
-      tz = z.los ? player.pos.z : knowsZ;
+      tx = z.los ? player.pos.x : z.orderFresh && z.order ? z.order.x : knowsX;
+      tz = z.los ? player.pos.z : z.orderFresh && z.order ? z.order.z : knowsZ;
     }
     this.seek(z, tx, tz, adt, player);
   }
@@ -781,6 +824,22 @@ export class ZombieManager {
     else if (!moving) armPitch = -0.5 + Math.sin(z.animT * 2) * 0.08;
     z.armL.rotation.x = armPitch + (moving ? Math.sin(z.animT * 7 + 1) * 0.15 : 0);
     z.armR.rotation.x = armPitch - (moving ? Math.sin(z.animT * 7 + 1) * 0.15 : 0);
+
+    // carried object rides the hands: held at the chest while finding a
+    // throwing lane, hoisted overhead while winding up — the preparation is
+    // readable from across the square (spec: visible preparation)
+    if (z.carrying) {
+      const o = z.carrying.mesh;
+      o.visible = true;
+      const raised = z.state === 'windupThrow';
+      o.position.set(
+        z.pos.x + Math.sin(z.facing) * 0.32,
+        raised ? 2.05 : 1.35, // 2.05 = the raised hands' height (armPitch -2.6)
+        z.pos.z + Math.cos(z.facing) * 0.32,
+      );
+      o.rotation.y = z.facing;
+      if (raised) o.rotation.z = z.animT * 3; // wobbling overhead, about to hurl
+    }
   }
 }
 

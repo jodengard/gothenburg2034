@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 35 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 40 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,46 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: U (optimizations branch — 1:2 maps + collider grid + chainsaw buff) — verified
+## Current milestone: Zombies 2.0 (zombies-2.0 branch — pack knowledge, audible tactics, real preparation) — verified
+
+Re-audited the AI against the original pack-intelligence spec and closed every gap:
+
+### Shared pack knowledge (the big one — also fixes a spec violation)
+- **Before:** flankers and interceptors steered at the player's *live* position even
+  through solid walls (magic knowledge — a direct violation of "no magic through
+  obstacles"). Only pursuers respected last-known.
+- **Now:** `Pack.known` — any member with line of sight "howls" a **fuzzed** (±1.5 m)
+  player position to the pack; the guess decays after `PACK.knowledgeFresh` (6 s) and
+  every member steers on `z.order` (the shared guess) → own `lastKnown` as fallbacks.
+  Live position/velocity is used only while the pack actually has eyes (`orderFresh`).
+  The howl is the justification, and it is **audible**: `sfx.growl()` fires on a fresh
+  sighting and on assault start (4 s throttle per pack — 34 howls heard in a 60 s soak).
+- Pack **assault state**: fresh knowledge + a body inside the pressure radius →
+  flankers drop the stand-off and commit (`PACK.assaultCommit`).
+
+### Readable threats
+- **Visible preparation:** the carried object now rides the zombie's raised hands
+  (chest height while picking a lane, overhead at 2.05 m during the 0.85 s windup,
+  wobbling) instead of invisibly vanishing; a carrier that dies drops it visibly at
+  the corpse (was: freed but permanently invisible).
+- **Opportunity attacks:** a flanker/interceptor that actually made it behind the
+  player's back (`attacksFromBehind`, dot < −0.25) gets +1.1 m melee reach — the
+  observable payoff of the pack's maneuver; verified: 2.6 m behind → strike, 2.6 m
+  in front → nothing.
+- **Throws lead the target:** aim point = player + velocity × 0.35 s (capped 2.5 m) —
+  standing still is a guaranteed hit, sprinting sideways beats the throw; dodging is
+  now a choice.
+
+### Verified live
+- Knowledge propagates (fuzz ≤ 1.5 m), goes stale without eyes (orders → null),
+  assault engages with pressure, barks fire (barkT → 4 s after sighting).
+- Blind + out-of-earshot pursuer heads its own memory, **not** the live player.
+- 5-minute organic soak at threat 5: 194 grabs → 64 windups → 57 completed throws,
+  0 NaN, 0 errors, 0.185 ms/step with 31 zombies / 7 packs.
+- 40/40 unit tests (5 new: sighting fuzz, staleness, assault bark, no-sighting
+  silence, flank detection); tsc clean.
+
+## Previous milestone: U (optimizations branch — 1:2 maps + collider grid + chainsaw buff) — verified
 
 ### Changed — both arenas are now 1:2 miniatures (closer, denser, cheaper)
 - `WORLD.scale = 0.5`, `halfSize` 130 → **65 m**: every OSM coordinate, road width,

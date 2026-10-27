@@ -1080,7 +1080,10 @@ function step(dt: number): void {
 
   const throwablesAvailable =
     state.threatLevel >= 3 && activeWorld.throwables.some((o: ThrowableObject) => !o.taken);
-  packs.update(dt, { player: playerView, threat: state.threatLevel, throwablesAvailable });
+  packs.update(dt, {
+    player: playerView, threat: state.threatLevel, throwablesAvailable,
+    onBark: () => sfx.growl(), // the pack howls when it spots you / pushes — audible tactics
+  });
   zombies.update(dt, playerView, state.threatLevel, activeWorld.throwables);
 
   projectiles.update(dt, player.pos, PLAYER.eyeHeight);
