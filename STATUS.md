@@ -21,7 +21,24 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Shanghai 2.5 — greening & street life (make it feel like home) — verified
+## Current milestone: Shanghai 2.6 — stall fix + street life — verified
+
+- **Noodle stall relocated**: the plaza shrub rows were growing *through* the
+  stall (their `pushShrub` guard only checked colliders, and the stall's
+  colliders land after the greening pass). Moved the stall to an open pocket
+  east-south of the middle Sun Valley cone (clear of both shrub rows, the cone,
+  the towers and the shuttle deck), moved the 茶 board with it, and gave
+  `pushShrub` a `clearOf` guard so no future prop gets buried. The eating/chef
+  bunny and the bowl drop all follow `n.bar`, so they moved for free.
+- **Street life** (all procedural, mostly instanced, seeded): a glass **bus
+  stop** on the real 周家渡路 with a 周家渡路 route board + waiting bench; a
+  yellow **shared-bike** fleet (共享单车 — frame/handlebar/wheel instanced, 3
+  draws) parked along the Axis and at the kerb; two stone **chess tables** with
+  stools under the plaza trees (retiree territory); **litter bins** beside every
+  bench and the stall. Placement dodges towers, the skewed-road tree row and
+  each other. 61/61 unit tests; live bundle `index-DA3amRCe.js`.
+
+## Previous milestone: Shanghai 2.5 — greening & street life (make it feel like home) — verified
 
 - **Plane-tree boulevard**: the real 周家渡路 arterial (OSM) lined with rows of
   instanced trees (法国梧桐 rows on both sides + grass verge patches) — the
