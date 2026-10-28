@@ -723,7 +723,8 @@ function fireWeapon(): void {
         }
       }
       if (blocked) continue;
-      zombies.damage(z, def.damage, dir.x * 0.5, dir.z * 0.5, { byPlayer: true });
+      // post-nerf the stream is a broom, not a blender: light damage, real shove
+      zombies.damage(z, def.damage, dir.x * FLAME.knockback, dir.z * FLAME.knockback, { byPlayer: true });
       zombies.ignite(z, FLAME.igniteSeconds);
       if (Math.random() < 0.3) {
         fx.blood(z.pos.x, 1.2, z.pos.z, dir.x, dir.z);

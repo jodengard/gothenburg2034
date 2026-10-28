@@ -23,6 +23,12 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 
 ## Current milestone: Enemy — the Charger v2 (charger branch) — verified
 
+- **Flamethrower nerf + broom mode** (user tuning): stream damage cut **75 %**
+  (6→1.5/tick = 30 dps direct, burn 22→5.5 dps) and the stream gained **real
+  knockback** (`FLAME.knockback: 2` m/s shove per tick, up from a token 0.5) —
+  the weapon is no longer a blender but a broom: live, 1 s of stream costs a
+  zombie 35 hp (was ~142) and drags it 1.5 m backward mid-charge.
+
 - **The Charger**: a **completely black** (suit, head AND arms all 0x141414 — pool
   reuse hands the skin back to everyone else) quadrupedal freight train, mesh
   1.9×/2.0× (boomer 1.5×, normal 1×), radius 1.9×, **4× normal HP**.

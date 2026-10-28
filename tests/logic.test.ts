@@ -765,7 +765,7 @@ describe('flamethrower & BFG', () => {
     const log: string[] = [];
     const zm = new ZombieManager(new THREE.Scene(), [], silentEvents(log));
     const z = zm.spawn(0, 0, 1, 1);
-    z.hp = 5; // one burn tick is plenty
+    z.hp = (FLAME.burnDps * FLAME.burnTick) / 2; // one burn tick is plenty
     zm.ignite(z, FLAME.igniteSeconds);
     for (let i = 0; i < 30; i++) zm.update(1 / 60, farPlayer, 1, []);
     expect(z.state).toBe('dead');

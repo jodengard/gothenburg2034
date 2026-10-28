@@ -282,7 +282,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
   // held. The stream itself is modest damage — the ignition does the work.
   // Pickups top up exactly one extra tank (pickupReserve = magSize).
   flame: {
-    id: 'flame', name: 'Flamethrower', kind: 'gun', damage: 6, range: 11,
+    id: 'flame', name: 'Flamethrower', kind: 'gun', damage: 1.5, range: 11,
     cooldown: 0.05, magSize: 100, startReserve: 0, pickupReserve: 100,
     auto: true, recoil: 0.002,
     dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xb3401a,
@@ -302,8 +302,9 @@ export const CHAINSAW_START_FUEL = 100;
 export const FLAME = {
   coneHalf: 0.24, // radians, half-angle of the ignition cone
   igniteSeconds: 3, // burn duration per hit (refreshed, not stacked)
-  burnDps: 22, // damage per second while burning
+  burnDps: 5.5, // damage per second while burning (post-nerf: fire hurts, it doesn't delete)
   burnTick: 0.5, // seconds between burn damage ticks
+  knockback: 2, // m/s shove per stream tick — the real tool now: hold the horde back
 };
 
 export const BFG = {
