@@ -330,7 +330,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   };
   const keepOut: [number, number, number][] = [
     [X(30), 52 * S, 7], // parked shuttle — you board it, keep the deck clear
-    [X(47.4), -14.2 * S, 4.5], // noodle stall (relocated east of the Axis: clear of the shrub rows)
+    [X(26), 16 * S, 4.5], // noodle stall (shrubs/trees/poles now respect this clearing)
     [X(52), 34 * S, 4], // player start
   ];
   const clearOf = (x: number, z: number, m: number): boolean =>
@@ -577,7 +577,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
 
   // A single 茶 lantern-board by the noodle stall — every old street has one.
   const tea = signMesh('茶', 0.85, 1.7, true, '#7a1f1f', '#ffe9b0');
-  tea.position.set(X(53), 2.5, -14.2 * S); // hangs over the stall's new counter
+  tea.position.set(X(23.6), 2.5, 16 * S);
   tea.rotation.y = Math.PI / 2 + 0.4;
   add(tea);
 
@@ -606,9 +606,10 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   bus.rotation.y = 2.4;
   scene.add(bus);
 
-  // --- noodle stall on the Axis plaza: 牛肉麵 and a resident bunny ------------------
-  // relocated east-south of the middle cone, clear of the shrub rows that clipped it
-  const stallX = X(47.4), stallZ = -14.2 * S;
+  // --- noodle stall west of the Expo Axis: 牛肉麵 and a resident bunny ----------------
+  // back at its original spot; the keepOut radius + pushShrub's clearOf guard now
+  // keep the shrub rows/trees/poles out, so nothing clips the counter any more.
+  const stallX = X(26), stallZ = 16 * S;
   const noodle = buildNoodleStall(stallX, stallZ, Math.PI / 2); // real size: you eat at it
   scene.add(noodle.group);
   colliders.push(...noodle.colliders);
@@ -707,15 +708,12 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
     add(tables); add(stools);
   }
 
-  // Litter bins beside every bench and the stall — otherwise the plaza is filthy.
+  // Litter bins beside the plaza benches — otherwise the plaza is filthy.
+  // (None by the stall: the user wants the area around it kept clear.)
   const binPts: { x: number; z: number }[] = [];
   for (const t of [-17, 0, 17]) {
     const x = C.x + AXIS.x * (t + 1.7) + perp.x * 5.4, z = C.z + AXIS.z * (t + 1.7) + perp.z * 5.4;
     if (!blocked(x, z, 0.5) && clearOf(x, z, 0.6)) binPts.push({ x, z });
-  }
-  {
-    const x = stallX + 2, z = stallZ - 2.6;
-    if (!blocked(x, z, 0.5)) binPts.push({ x, z });
   }
   if (binPts.length) {
     const bins = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28, 0.24, 0.85, 8), M.bin, binPts.length);
