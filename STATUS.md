@@ -24,7 +24,8 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 ## Current milestone: Weapons — Flamethrower & BFG-9000 — verified
 
 - **Flamethrower** (`flame`): auto weapon, ammo = fuel (100-unit tank, 20/s burn rate,
-  150 reserve, 2.6 s reload). The stream is a 11 m / 14° half-angle cone that **stops at walls**
+  one extra tank per pickup, 2.6 s reload). The stream is a 11 m / 14° half-angle cone
+  that **stops at walls**
   (per-hit LOS check — no roasting through concrete): 120 dps direct + **ignition** —
   burning zombies tick 22 dps for 3 s (refresh, not stack). Burn goes through
   `damage()` with player attribution, so a burning boomer still detonates on death.
@@ -46,6 +47,10 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   a pulsing blue point light and shed rising `fx.shimmer` sparkles so they spot
   themselves across the arena. Live: 300 kills at five stars → 45 drops, ~7 rares
   rolled, exactly 1 existed; light pulses, sparkles rise.
+- **Clip economy** (user tuning): a flame/BFG pickup grants exactly **one extra clip**
+  on top of the loaded one (flame 100/100, BFG 4/4 — was 100/150 and 4/12), and the
+  **chainsaw now has infinite ammo** (`fuelUse: 0` — the tank never runs dry; live:
+  10 s of continuous sawing leaves fuel at 100 and it still fires).
 - **Verified live**: flame — 10 fuel burned in 0.67 s, `burnT` applied, 104 hp lost,
   burn finished a 30 hp zombie (`state='dead'`), 6 zombies ablaze in one sweep; BFG —
   ball mid-flight, boom on contact, **12 kills from one shot**; pickup flow (E over a

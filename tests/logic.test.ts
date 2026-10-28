@@ -11,7 +11,7 @@ import { Zombie, PlayerView, Role, ZombieManager, ZombieEvents } from '../src/zo
 import { GasClouds } from '../src/gas';
 import { World } from '../src/world';
 import { makePath, samplePath, distPointSeg } from '../src/traffic';
-import { THREAT, PACK, FAT, ZOMBIE, FLAME, WEAPONS } from '../src/config';
+import { THREAT, PACK, FAT, ZOMBIE, FLAME, WEAPONS, CHAINSAW_START_FUEL } from '../src/config';
 
 // --- RNG ---------------------------------------------------------------------
 describe('RNG', () => {
@@ -151,7 +151,7 @@ describe('weapons', () => {
     w.update(1.0);
     expect(w.tryFire()).toBe(true);
   });
-  it('chainsaw burns fuel and stops when empty', () => {
+  it('chainsaw has infinite ammo: the tank never runs dry', () => {
     const w = new WeaponState();
     w.give('chainsaw');
     let shots = 0;
@@ -160,8 +160,9 @@ describe('weapons', () => {
       if (w.tryFire()) shots++;
     }
     expect(shots).toBeGreaterThan(0);
-    expect(w.fuel).toBe(0);
-    expect(w.canFire()).toBe(false);
+    expect(w.fuel).toBe(CHAINSAW_START_FUEL); // untouched by 25 s of screaming saw
+    w.update(0.2); // let the last shot's cooldown lapse
+    expect(w.canFire()).toBe(true);
   });
   it('rollDrop never yields bazooka at threat 1, can at threat 5', () => {
     const r1 = new RNG(1);
@@ -576,6 +577,8 @@ describe('flamethrower & BFG', () => {
       const def = WEAPONS[id];
       expect(def).toBeTruthy();
       expect(def.dropWeightByThreat).toHaveLength(5);
+      // a pickup grants exactly one extra clip on top of the loaded one
+      expect(def.pickupReserve).toBe(def.magSize);
     }
     expect(WEAPONS.bfg.dropWeightByThreat.slice(0, 4).every((w) => w === 0)).toBe(true);
     expect(WEAPONS.bfg.dropWeightByThreat[4]).toBeGreaterThan(0);

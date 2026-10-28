@@ -223,7 +223,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
   },
   chainsaw: {
     id: 'chainsaw', name: 'Chainsaw', kind: 'chain', damage: 260, range: 2.3,
-    cooldown: 0.12, fuelUse: 22, chainTick: 0.12,
+    cooldown: 0.12, fuelUse: 0, chainTick: 0.12, // infinite ammo: the tank never runs dry
     dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xd84315,
   },
   pistol: {
@@ -250,16 +250,18 @@ export const WEAPONS: Record<string, WeaponDef> = {
   },
   // Flamethrower: ammo counts fuel units, burned 20/s while the trigger is
   // held. The stream itself is modest damage — the ignition does the work.
+  // Pickups top up exactly one extra tank (pickupReserve = magSize).
   flame: {
     id: 'flame', name: 'Flamethrower', kind: 'gun', damage: 6, range: 11,
-    cooldown: 0.05, magSize: 100, startReserve: 0, pickupReserve: 150,
+    cooldown: 0.05, magSize: 100, startReserve: 0, pickupReserve: 100,
     auto: true, recoil: 0.002,
     dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xb3401a,
   },
   // BFG-9000: Quake II's green sun. Slow plasma ball, absurd splash.
+  // Pickups grant exactly one extra clip (pickupReserve = magSize).
   bfg: {
     id: 'bfg', name: 'BFG-9000', kind: 'projectile', damage: 320, range: 200,
-    cooldown: 1.4, magSize: 4, startReserve: 0, pickupReserve: 12,
+    cooldown: 1.4, magSize: 4, startReserve: 0, pickupReserve: 4,
     splashRadius: 9, recoil: 0.06,
     dropWeightByThreat: [0, 0, 0, 0, 1], color: 0x2fbf4f,
   },
