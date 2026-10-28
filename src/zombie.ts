@@ -317,9 +317,9 @@ export class ZombieManager {
     zom.mesh.rotation.set(0, 0, 0);
     zom.mesh.scale.set(
       fat ? 1.5 : charger ? CHARGER.meshScale[0] : 1,
-      fat ? 1.22 : charger ? CHARGER.meshScale[1] : 1,
+      fat ? 1 : charger ? CHARGER.meshScale[1] : 1, // same height as a normal zombie
       fat ? 1.5 : charger ? CHARGER.meshScale[2] : 1,
-    ); // bloated / huge-black / reset for pool reuse
+    ); // bloated-wide / huge-black / reset for pool reuse
     this.scene.add(zom.mesh);
     this.active.push(zom);
     return zom;

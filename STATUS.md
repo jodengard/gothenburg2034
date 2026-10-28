@@ -23,6 +23,13 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
 
 ## Current milestone: Shanghai 2.6 — stall clipping fix + street life — verified
 
+- **Boomer height normalised** (user tuning): the boomer mesh was scaled
+  `(1.5, 1.22, 1.5)` — wider *and* taller than a normal zombie, which pushed its
+  head above the fixed headshot band (1.48–1.95 m) and the raycast height cap, so
+  its skull was effectively un‑shootable. Now `(1.5, 1, 1.5)`: **same height as a
+  normal zombie, width kept** (collision radius still 1.7×, so the fat belly still
+  sets off contact detonation) and the head realigns with the headshot band.
+
 - **Noodle stall clipping fixed in place**: the plaza shrub rows were growing
   *through* the stall (their `pushShrub` guard only checked colliders, and the
   stall's colliders land after the greening pass). Rather than move the stall,
