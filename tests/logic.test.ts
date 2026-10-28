@@ -490,6 +490,24 @@ describe('charger', () => {
     expect(c.radius).toBeCloseTo(ZOMBIE.radius * CHARGER.radiusMult);
     expect(c.mesh.scale.x).toBeGreaterThan(1.5); // significantly larger (fat is 1.5)
     expect(c.bodyMat.color.getHex()).toBe(CHARGER.color); // unmistakably black
+    // COMPLETELY black: head and arms too, not just the suit
+    expect((c.head.material as THREE.MeshStandardMaterial).color.getHex()).toBe(CHARGER.color);
+    const armMat = (c.armL.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(armMat.color.getHex()).toBe(CHARGER.color);
+    // quadruped rig (after one animated frame — close enough for full AI):
+    // spine horizontal-ish, head low
+    const near: PlayerView = {
+      pos: { x: 10, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    zm.update(1 / 60, near, 3, []);
+    expect(Math.abs(c.bodyMesh.rotation.x)).toBeGreaterThan(1);
+    expect(c.head.position.z).toBeGreaterThan(0.5);
+    expect(c.head.position.y).toBeLessThan(c.bodyMesh.position.y);
+    // pool reuse hands the upright rig back to the next spawn
+    const plain = zm.spawn(40, 0, 1, 3);
+    expect(plain.bodyMesh.rotation.x).toBe(0);
+    expect(plain.head.position.y).toBeCloseTo(1.68);
+    expect((plain.head.material as THREE.MeshStandardMaterial).color.getHex()).not.toBe(CHARGER.color);
     expect(c.hp / normal.hp).toBeGreaterThan(CHARGER.hpMult * 0.7); // variance-safe ratio
     expect(c.speed).toBeLessThan(normal.speed);
     zm.clearAll();
@@ -544,6 +562,53 @@ describe('charger', () => {
     expect(hits.length).toBe(0);
     expect(c.pos.x).toBeLessThan(0); // it charged right past the origin
     zm.clearAll();
+  });
+
+  it('bowls other zombies over while charging', () => {
+    const hits: { power: number; lift: number }[] = [];
+    const windups = { n: 0 };
+    const zm = new ZombieManager(new THREE.Scene(), [], chargerEvents(hits, windups));
+    const player: PlayerView = {
+      pos: { x: 0, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    zm.spawn(8, 0, 1, 3, false, true); // the charger
+    const victim = zm.spawn(4, 0.4, 2, 3); // parked on the dash lane
+    const hp0 = victim.hp;
+    let mowed = false;
+    let guard = 0;
+    while (guard++ < 600 && !mowed) {
+      zm.update(1 / 60, player, 3, []);
+      mowed = victim.state === 'stagger' && victim.mowCd > 0;
+    }
+    expect(mowed).toBe(true);
+    expect(victim.hp).toBeLessThan(hp0); // it hurt
+    expect(Math.hypot(victim.vel.x, victim.vel.z)).toBeGreaterThan(10); // and launched
+    // one mow per windup: the cooldown guards against 60 hits/second
+    const v1 = victim.hp;
+    for (let k = 0; k < 20; k++) zm.update(1 / 60, player, 3, []);
+    expect(victim.hp).toBe(v1);
+    zm.clearAll();
+  });
+
+  it('falls and lies solid: a blocker until it sinks', () => {
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents([]));
+    const c = zm.spawn(5, 0, 1, 3, false, true);
+    expect(zm.blockers().length).toBe(0);
+    zm.damage(c, 99999); // not a player kill: the carcass survives (no fatality)
+    expect(c.state).toBe('dead');
+    expect(c.exploded).toBe(false);
+    expect(zm.blockers().length).toBe(1);
+    expect(zm.blockers()[0].r).toBe(CHARGER.corpseRadius);
+    const player: PlayerView = {
+      pos: { x: -50, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    // lies on the surface for corpseLife...
+    for (let k = 0; k < 60 * (CHARGER.corpseLife - 1); k++) zm.update(1 / 60, player, 3, []);
+    expect(zm.blockers().length).toBe(1);
+    expect(c.mesh.position.y).toBe(0);
+    // ...then sinks and stops blocking
+    for (let k = 0; k < 60 * 2.5; k++) zm.update(1 / 60, player, 3, []);
+    expect(zm.blockers().length).toBe(0);
   });
 
   it('knock launches the player airborne — far past the ground speed clamp', () => {

@@ -76,6 +76,9 @@ export interface Zombie {
   /** Traffic hit cooldown: a vehicle that just clipped this zombie cannot
    * re-hit it on the same pass (one car side-swipe = one blow, not 60/s). */
   trafficCd: number;
+  /** Charger mow cooldown: a dashing charger bowls a zombie over at most once
+   * per windup (contact is continuous across frames — one hit, not 60/s). */
+  mowCd: number;
   /** true on the frame a riding zombie dies (ride already cleared) — carrot drops. */
   wasRiding: boolean;
   /** Damage attribution for the killing blow (fatalities only on player kills). */
@@ -222,7 +225,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, charger: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, charger: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, mowCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -253,6 +256,30 @@ export class ZombieManager {
     zom.bodyMesh.material = suit;
     zom.legL.material = suit;
     zom.legR.material = suit;
+    // the charger is COMPLETELY black — head and arms included (pool reuse
+    // hands the skin materials back to everyone else)
+    const flesh = charger ? CHARGER_SUIT : SKIN;
+    zom.head.material = flesh;
+    (zom.armL.children[0] as THREE.Mesh).material = flesh;
+    (zom.armR.children[0] as THREE.Mesh).material = flesh;
+    // limb layout: chargers run on all fours (animate() tilts the spine);
+    // everyone else gets the upright rig back — the pool is shared
+    if (charger) {
+      zom.bodyMesh.position.set(0, 0.95, 0);
+      zom.head.position.set(0, 0.75, 0.66); // head carried low and far ahead
+      zom.legL.position.set(-0.17, 0.45, -0.4); // hind legs pushed back
+      zom.legR.position.set(0.17, 0.45, -0.4);
+      zom.armL.position.set(-0.3, 0.8, 0.38); // forelegs under the chest
+      zom.armR.position.set(0.3, 0.8, 0.38);
+    } else {
+      zom.bodyMesh.position.set(0, 1.175, 0);
+      zom.bodyMesh.rotation.x = 0;
+      zom.head.position.set(0, 1.68, 0);
+      zom.legL.position.set(-0.14, 0.4, 0);
+      zom.legR.position.set(0.14, 0.4, 0);
+      zom.armL.position.set(-0.34, 1.45, 0);
+      zom.armR.position.set(0.34, 1.45, 0);
+    }
     zom.state = 'approach';
     zom.role = 'pursuer';
     zom.packId = packId;
@@ -272,6 +299,7 @@ export class ZombieManager {
     zom.assault = false;
     zom.ride = null;
     zom.trafficCd = 0;
+    zom.mowCd = 0;
     zom.wasRiding = false;
     zom.lastHitHead = false;
     zom.lastHitByPlayer = false;
@@ -350,6 +378,18 @@ export class ZombieManager {
       const d = Math.hypot(q.pos.x - x, q.pos.z - z);
       if (d < radius) this.damage(q, dmg * (1 - 0.6 * (d / radius)));
     }
+  }
+
+  /** Fallen chargers still lying on the ground: solid obstacles — the player
+   * cannot walk through the carcass until it sinks (main.ts resolves it). */
+  blockers(): { x: number; z: number; r: number }[] {
+    const out: { x: number; z: number; r: number }[] = [];
+    for (const z of this.active) {
+      if (z.charger && z.state === 'dead' && !z.exploded && z.deadT < CHARGER.corpseLife) {
+        out.push({ x: z.pos.x, z: z.pos.z, r: CHARGER.corpseRadius });
+      }
+    }
+    return out;
   }
 
   private kill(z: Zombie): void {
@@ -446,6 +486,7 @@ export class ZombieManager {
       // draw-call LOD: distant zombies render as fewer meshes
       this.lod(z, dist);
       if (z.trafficCd > 0) z.trafficCd -= dt;
+      if (z.mowCd > 0) z.mowCd -= dt;
 
       // riders stay welded to their vehicle every frame (AI is suspended,
       // but the scooter keeps moving — no throttled lag on the mesh)
@@ -496,8 +537,8 @@ export class ZombieManager {
 
       this.updateZombie(z, adt, dt, dist, player, throwables);
 
-      // remove fully dead
-      if (z.state === 'dead' && z.deadT > ZOMBIE.deathSinkDelay + 1.2) {
+      // remove fully dead (a charger's carcass lies on the ground much longer)
+      if (z.state === 'dead' && z.deadT > (z.charger ? CHARGER.corpseLife : ZOMBIE.deathSinkDelay) + 1.2) {
         this.scene.remove(z.mesh);
         this.active.splice(i, 1);
         this.pool.push(z);
@@ -523,8 +564,9 @@ export class ZombieManager {
       const fall = Math.min(1, z.deadT / ZOMBIE.deathFallTime);
       const ang = (Math.PI / 2) * fall * z.fallDir;
       z.mesh.rotation.z = ang;
-      if (z.deadT > ZOMBIE.deathSinkDelay) {
-        z.mesh.position.y = -(z.deadT - ZOMBIE.deathSinkDelay) * 1.4;
+      const sinkAt = z.charger ? CHARGER.corpseLife : ZOMBIE.deathSinkDelay;
+      if (z.deadT > sinkAt) {
+        z.mesh.position.y = -(z.deadT - sinkAt) * 1.4;
       }
       return;
     }
@@ -635,6 +677,22 @@ export class ZombieManager {
         resolveCircleWorld(this.colliders, z.pos, z.radius);
         z.mesh.position.set(z.pos.x, z.mesh.position.y, z.pos.z);
         z.mesh.rotation.y = z.facing;
+        // bowl over everything in the lane: the little ones go flying (a
+        // boomer killed mid-mow detonates — the horde eats its own)
+        for (const q of this.active) {
+          if (q === z || q.state === 'dead' || q.mowCd > 0) continue;
+          const ox = q.pos.x - z.pos.x;
+          const oz = q.pos.z - z.pos.z;
+          const od = Math.hypot(ox, oz);
+          if (od > z.radius + q.radius + 0.25) continue;
+          q.mowCd = 1;
+          const d = od || 1;
+          const killed = this.damage(q, CHARGER.mowDamage, (ox / d) * CHARGER.mowPower, (oz / d) * CHARGER.mowPower);
+          if (!killed) {
+            q.state = 'stagger'; // a guaranteed launch, not the stagger coin-flip
+            q.staggerT = Math.max(q.staggerT, 0.55);
+          }
+        }
         if (dist < z.radius + PLAYER.radius + 0.3 && z.los) {
           // it got you: damage + a launch into orbit (one atomic hit)
           this.events.onChargerHit(z.pos.x, z.pos.z, CHARGER.knockPower, CHARGER.knockLift);
@@ -978,6 +1036,23 @@ export class ZombieManager {
   private animate(z: Zombie, dt: number): void {
     void dt;
     const moving = Math.hypot(z.vel.x, z.vel.z) > 0.4 && z.state !== 'dead';
+
+    // the charger: a four-legged freight train. Spine horizontal, hind legs
+    // driving, forelegs striking — and it rears up on its haunches to coil
+    // for the charge (the readable telegraph).
+    if (z.charger) {
+      const rear = z.state === 'windupCharge';
+      z.bodyMesh.rotation.x = Math.PI / 2 - (rear ? 0.85 : 0.28);
+      const gait = Math.sin(z.animT * (moving ? 12 : 3.2));
+      const amp = moving ? (z.state === 'charging' ? 0.95 : 0.6) : 0.06;
+      z.legL.rotation.x = 0.3 + gait * amp; // hind legs: driving pistons
+      z.legR.rotation.x = 0.3 - gait * amp;
+      z.armL.rotation.x = (rear ? -1.3 : -0.15) - gait * amp * 0.85; // forelegs in phase-opposition
+      z.armR.rotation.x = (rear ? -1.3 : -0.15) + gait * amp * 0.85;
+      if (z.carrying) z.carrying.mesh.visible = false; // it never throws; hide any reused prop
+      return;
+    }
+
     const swing = moving ? Math.sin(z.animT * 7) * 0.5 : 0;
     z.legL.rotation.x = swing;
     z.legR.rotation.x = -swing;

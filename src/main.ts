@@ -1104,6 +1104,25 @@ function step(dt: number): void {
   }
   player.update(dt);
 
+  // Fallen chargers are terrain you respect: the carcass blocks the player
+  // until it sinks (zombies trample it, you walk around it).
+  if (!player.riding) {
+    for (const b of zombies.blockers()) {
+      const bx = player.pos.x - b.x;
+      const bz = player.pos.z - b.z;
+      const bd = Math.hypot(bx, bz);
+      const min = b.r + PLAYER.radius;
+      if (bd < min) {
+        if (bd > 1e-6) {
+          player.pos.x = b.x + (bx / bd) * min;
+          player.pos.z = b.z + (bz / bd) * min;
+        } else {
+          player.pos.z = b.z + min; // dead center: shove out along +z
+        }
+      }
+    }
+  }
+
   // Riding: third-person chase cam — the player is a Lisebergskanin on the deck.
   if (player.riding && traffic.ridden) {
     const v = traffic.ridden;
@@ -1179,6 +1198,9 @@ function step(dt: number): void {
     const members: Zombie[] = [];
     let fats = 0;
     let chargers = 0;
+    // global charger cap: never more than CHARGER.maxAlive strolling the arena
+    let chargersAlive = 0;
+    for (const z of zombies.active) if (z.charger && z.state !== 'dead') chargersAlive++;
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;
       const oz = z + (Math.random() - 0.5) * 4;
@@ -1186,8 +1208,8 @@ function step(dt: number): void {
       const fat = state.threatLevel >= 3 && fats < FAT.maxPerPack &&
         Math.random() < FAT.chance[Math.min(state.threatLevel, FAT.chance.length) - 1];
       if (fat) fats++;
-      // chargers: from threat 2, one per pack, never stacked on a boomer
-      const charger = !fat && chargers < CHARGER.maxPerPack &&
+      // chargers: from threat 2, one per pack, max 3 alive, never on a boomer
+      const charger = !fat && chargers < CHARGER.maxPerPack && chargersAlive + chargers < CHARGER.maxAlive &&
         state.threatLevel >= CHARGER.fromThreat &&
         Math.random() < CHARGER.chance[Math.min(state.threatLevel, CHARGER.chance.length) - 1];
       if (charger) chargers++;

@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 58 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 60 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,27 +21,35 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Enemy — the Charger (charger branch) — verified
+## Current milestone: Enemy — the Charger v2 (charger branch) — verified
 
-- **The Charger**: a wall of **soot-black muscle** (`CHARGER` in `config.ts`) — mesh
-  scaled **1.9×/2.0×** (boomer is 1.5×, normal 1×), collision radius 1.9×, 3.5× hp,
-  black oily suit (`CHARGER_SUIT`, 0x141414 — survives hit-flash and burn restore).
-  Spawns from **threat 2**, max **1 per pack**, never stacked on a boomer; blunt like
-  the boomers in `computeRoles` (no flanker/thrower/interceptor games).
-- **The charge**: sees you within 10 m → **bellow + coil** (`sfx.growl`, 0.7 s
-  windup — the readable dodge window) → **committed straight-line dash** 13 m/s
-  (≈2× sprint) for 0.9 s — no steering, no bullet-decay, locked heading. Beat it and
-  it thunders past into a 0.5 s recover + 3.2 s cooldown. Point-blank (<3 m) it
-  swats instead of dashing.
-- **Insane knockback**: contact = 16 dmg + `onChargerHit` → `player.knock()` adds
-  22 m/s horizontal + 6.5 m/s vertical and yanks you off the ground — **airborne
-  frames bypass the ground speed clamp**, so you genuinely fly (~16 m live). The
-  swat half-launches (0.6×). Immunity blocks damage *and* launch (one atomic event).
-- **Verified live**: FSM `approach → windupCharge@0.32s → charging@1.02s →
-  recover@1.55s`; player launched at 22 m/s, vy 6.5, **flew 15.6 m**; 16 dmg;
-  2 min at threat 4 → 54 packs, 10 chargers, max 1/pack; sidestep mid-dash = clean
-  miss. 58/58 unit tests (4 new: spawn stats + black suit, telegraph→dash→launch FSM
-  with locked z-velocity, sidestep dodge, `Player.knock` airborne flight > 8 m).
+- **The Charger**: a **completely black** (suit, head AND arms all 0x141414 — pool
+  reuse hands the skin back to everyone else) quadrupedal freight train, mesh
+  1.9×/2.0× (boomer 1.5×, normal 1×), radius 1.9×, **4× normal HP**.
+- **Runs on all fours**: spawn re-rigs the limbs (spine horizontal via animate,
+  head carried low & far ahead, hind legs back, forelegs under the chest) with a
+  gallop gait that doubles cadence mid-dash — and it **rears up on its haunches**
+  during the 0.7 s windup bellow (the telegraph got a lot more readable).
+- **The charge**: sees you within 10 m → bellow + rear → committed straight-line
+  dash 13 m/s for 0.9 s. Contact = 16 dmg + `player.knock()` launch (22 m/s
+  horizontal + 6.5 lift — airborne = no speed clamp, ~16 m of flight).
+- **Mows the horde**: anything caught in the dash lane gets bowled over —
+  20 m/s launch + 10 dmg, guaranteed stagger, `mowCd` guards one hit per windup
+  (a boomer killed mid-mow detonates: the horde eats its own).
+- **Limits**: threat 2+, 1 per pack, **max 3 alive in the arena** (live: 14
+  spawned in 3 min at threat 4, never more than 3 standing).
+- **Balance pass** (user tuning): charger HP 3.5×→**4×**, boomer HP 5×→**2×**,
+  headshot multiplier 2.5×→**3×** (the low quadruped head sits inside the
+  headshot band — live raycast at eye height returns `head: true`).
+- **Solid carcass**: a fallen charger **lies on the ground 12 s** (`corpseLife`)
+  and **blocks the player** within 1.3 m (`blockers()` resolved in main.ts after
+  `player.update`) — zombies trample it, you walk around it — then it sinks as
+  usual. Live: minimum player distance pinned at exactly 1.72 m (1.3 + player
+  radius) while solid, walked straight over the spot after it sank.
+- **Verified live**: mow — 2 victims launched, peak 19.4 m/s; cap — maxAlive 3;
+  headshot — 78 dmg from a 26-dmg pistol; corpse — blocked then passable.
+  60/60 unit tests (new: full-black + quadruped rig + pool-reuse reset, mow
+  launch/damage/once-per-windup, blocker lifetime).
 
 ## Previous milestone: Weapons — Flamethrower & BFG-9000 — verified
 

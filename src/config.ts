@@ -60,7 +60,7 @@ export const BUNNY = {
 
 /** Fatalities & headshots: aim for the skull, watch them pop. */
 export const FATALITY = {
-  headMult: 2.5, // headshot damage multiplier
+  headMult: 3, // headshot damage multiplier
   headRadius: 0.24, // horizontal tolerance around the head axis (m)
   headMinY: 1.48, // head hitbox in zombie-local space (mesh y + this)
   headMaxY: 1.95,
@@ -170,7 +170,7 @@ export const PACK = {
 export const FAT = {
   chance: [0, 0, 0.1, 0.12, 0.16] as const, // per threat level (1..5)
   maxPerPack: 2, // two boomers per pack is already a war crime
-  hpMult: 5,
+  hpMult: 2,
   speedMult: 0.5,
   radiusMult: 1.7,
   touchDist: 2.1, // belly-to-player distance that sets it off (m)
@@ -193,8 +193,9 @@ export const FAT = {
 export const CHARGER = {
   chance: [0, 0.08, 0.12, 0.16, 0.2] as const, // per threat level (1..5)
   fromThreat: 2, // chargers join the party from threat 2 on
-  maxPerPack: 1, // one per pack is plenty
-  hpMult: 3.5,
+  maxPerPack: 1, // one per pack...
+  maxAlive: 3, // ...and never more than three in the arena at once
+  hpMult: 4, // four times a normal zombie's grit
   speedMult: 0.85, // shambles slower than the crowd...
   radiusMult: 1.9, // ...but takes a whole lane...
   meshScale: [1.9, 2.0, 1.9] as const, // ...and is unmistakably huge and black
@@ -209,6 +210,10 @@ export const CHARGER = {
   knockLift: 6.5, // vertical launch (m/s) — airborne = no speed clamp
   cooldown: 3.2, // seconds between charges
   reachMult: 1.5, // its melee reach scales with its size
+  mowPower: 20, // zombies it bowls over during the dash get launched (m/s)
+  mowDamage: 10, // ...and hurt a little for the trouble
+  corpseLife: 12, // seconds the fallen body lies on the ground (solid!)
+  corpseRadius: 1.3, // the carcass blocks movement within this radius (m)
 };
 
 export interface WeaponDef {
