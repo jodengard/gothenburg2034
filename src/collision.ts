@@ -26,6 +26,16 @@ export function closestPointOnAABB(a: AABB, p: Vec2): Vec2 {
   };
 }
 
+/** Ray-casting point-in-polygon test (2D, any winding, open or closed ring). */
+export function pointInPoly(p: Vec2, poly: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, zi = poly[i].z, xj = poly[j].x, zj = poly[j].z;
+    if (zi > p.z !== zj > p.z && p.x < ((xj - xi) * (p.z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** Push a circle (center p, radius r) out of an AABB. Returns new center. */
 export function resolveCircleAABB(a: AABB, p: Vec2, r: number): Vec2 {
   const qx = closestPointOnAABB(a, p);

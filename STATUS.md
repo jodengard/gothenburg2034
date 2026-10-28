@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 60 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 61 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,34 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Enemy — the Charger v2 (charger branch) — verified
+## Current milestone: Shanghai 2.5 — greening & street life (make it feel like home) — verified
+
+- **Plane-tree boulevard**: the real 周家渡路 arterial (OSM) lined with rows of
+  instanced trees (法国梧桐 rows on both sides + grass verge patches) — the
+  signature Shanghai concession avenue. Tree canopies carry a Shanghai palette:
+  plane greens + ginkgo gold (`SH_LEAF`, per-instance colors).
+- **外星公园 greened**: the actual OSM park polygon south of the arena gets a
+  `ShapeGeometry` lawn + a dense procedural copse (point-in-poly sampling) +
+  shrubs — a real green horizon landmark beyond the walls. New pure helper
+  `pointInPoly` in `collision.ts` (unit-tested).
+- **Expo Axis life**: tree rows flanking the plaza, **red lantern strings**
+  (instanced lanterns + gold caps + sag, on red poles with visible wires) down
+  the Axis, azalea beds (杜鹃) between the trees and ringing the Sun Valley
+  cones, and park benches facing the plaza.
+- **Lit Chinese signage** — canvas-texture signs (browser CJK font, zero
+  assets): vertical red-and-gold boards on the neon towers (上海欢迎您 / 世博轴 /
+  中华艺术宫 / 百货大楼 / 世博源), a real green 周家渡路 street plate, and a 茶
+  board by the noodle stall.
+- **Expo Axis canopy**: the OSM `roof` footprint (previously skipped) rebuilt
+  as a floating translucent membrane on white columns — the Sun Valley cones
+  poke through it exactly like the real structure.
+- All greenery is **instanced** (trunks/canopies/shrubs/lanterns/poles/wires =
+  7 draw calls for ~90 props) and seeded (`mulberry32`) — identical every
+  build. Placement respects colliders, the shuttle deck, the stall and the
+  player start. Live: 129 draw calls / 24k tris with 60 zombies; 14 packs
+  spawned in 30 s (spawn validity intact). 61/61 unit tests.
+
+## Previous milestone: Enemy — the Charger v2 (charger branch) — verified
 
 - **Flamethrower nerf + broom mode** (user tuning): stream damage cut **75 %**
   (6→1.5/tick = 30 dps direct, burn 22→5.5 dps) and the stream gained **real

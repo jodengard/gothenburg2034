@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { RNG } from '../src/rng';
-import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash, invalidateColliderGrid } from '../src/collision';
+import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash, invalidateColliderGrid, pointInPoly } from '../src/collision';
 import { WeaponState, rollDrop, dropAllowed } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, PackManager, attacksFromBehind, Pack } from '../src/pack';
@@ -76,6 +76,15 @@ describe('collision', () => {
     expect(out).toContain(a);
     expect(out).toContain(b);
     expect(out).not.toContain(far);
+  });
+  it('point-in-polygon: inside, outside and concave notches', () => {
+    const square = [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 10 }, { x: 0, z: 10 }];
+    expect(pointInPoly({ x: 5, z: 5 }, square)).toBe(true);
+    expect(pointInPoly({ x: -1, z: 5 }, square)).toBe(false);
+    // L-shaped ring: the notch at (7,7) is outside even though bbox says inside
+    const l = [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 4 }, { x: 4, z: 4 }, { x: 4, z: 10 }, { x: 0, z: 10 }];
+    expect(pointInPoly({ x: 2, z: 8 }, l)).toBe(true);
+    expect(pointInPoly({ x: 7, z: 7 }, l)).toBe(false);
   });
 });
 

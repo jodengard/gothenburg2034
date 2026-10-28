@@ -7,7 +7,7 @@
  */
 import * as THREE from 'three';
 import mapdataRaw from './mapdata-shanghai.json';
-import { AABB, Vec2, makeAABB, segmentBlocked } from './collision';
+import { AABB, Vec2, makeAABB, segmentBlocked, pointInPoly } from './collision';
 import { World } from './world';
 import { buildFlygbuss } from './traffic';
 import { buildNoodleStall } from './noodle';
@@ -18,8 +18,9 @@ interface BuildingWay {
   id: number; building: string; name: string | null;
   levels?: number; height?: number; pts: Pt[];
 }
+interface ParkWay { id: number; name: string | null; pts: Pt[] }
 
-const raw = mapdataRaw as unknown as { roads: RoadWay[]; buildings: BuildingWay[] };
+const raw = mapdataRaw as unknown as { roads: RoadWay[]; buildings: BuildingWay[]; parks?: ParkWay[] };
 
 /** The arena lives far outside Korsvägen's fog — a second island in the same scene. */
 export const SH_ISLAND = { x: 1200, z: 0 };
@@ -103,10 +104,59 @@ const M = {
   hull: new THREE.MeshLambertMaterial({ color: 0x2a2f36 }),
   bund: new THREE.MeshBasicMaterial({ color: 0x1a2233, fog: false }),
   bundLit: new THREE.MeshBasicMaterial({ color: 0xffd75e, fog: false, transparent: true, opacity: 0.55 }),
+  grass: new THREE.MeshLambertMaterial({ color: 0x46653a }),
+  grassPatch: new THREE.MeshLambertMaterial({ color: 0x4d6b3e }),
+  leafInst: new THREE.MeshLambertMaterial({ color: 0xffffff }), // white: instance colors ARE the leaf color
+  canopy: new THREE.MeshStandardMaterial({
+    color: 0xeef2f5, roughness: 0.4, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+  }),
+  lantern: new THREE.MeshBasicMaterial({ color: 0xe03a34 }),
+  lanternGold: new THREE.MeshBasicMaterial({ color: 0xffc94d }),
+  poleRed: new THREE.MeshLambertMaterial({ color: 0x7d2320 }),
+  wood: new THREE.MeshLambertMaterial({ color: 0x6a4a2a }),
 };
 const NEON = [0xff3d81, 0x31e0ff, 0x7dff4a, 0xffb13d, 0xc94dff].map(
   (c) => new THREE.MeshBasicMaterial({ color: c }),
 );
+
+/** Deterministic PRNG: the greening looks identical on every build. */
+function mulberry32(seed: number): () => number {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Lit shop sign drawn on a canvas — the browser's built-in CJK font renders
+ * the characters, so the street reads as Shanghai without shipping any assets.
+ */
+function signMesh(text: string, w: number, h: number, vertical: boolean, bg: string, fg: string): THREE.Mesh {
+  const cv = document.createElement('canvas');
+  cv.width = vertical ? 128 : 512;
+  cv.height = vertical ? 512 : 128;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = bg;
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = fg;
+  g.lineWidth = 7;
+  g.strokeRect(6, 6, cv.width - 12, cv.height - 12);
+  g.fillStyle = fg;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `bold ${vertical ? 92 : 80}px sans-serif`;
+  if (vertical) {
+    for (let i = 0; i < text.length; i++) g.fillText(text[i], cv.width / 2, (cv.height * (i + 0.5)) / text.length);
+  } else {
+    g.fillText(text, cv.width / 2, cv.height / 2 + 4);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex }));
+}
 
 // --- the arena -----------------------------------------------------------------
 
@@ -260,6 +310,287 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
     add(box(0.5, 0.3, 0.9, M.lampHead, X(x), 6.05, z * S));
     colliders.push(makeAABB(X(x), z * S, 0.3, 0.3, 6));
     lamps.push({ x: X(x), z: z * S });
+  }
+
+  // --- Shanghai greening & street life: make it feel like home -------------------
+  // OSM carries no tree nodes here, so the greenery is procedural but anchored
+  // to REAL geometry: plane-tree rows (the 梧桐 of the old concessions) along
+  // 周家渡路 and the Expo Axis, 外星公园's actual polygon greened beyond the
+  // south wall, azalea beds, red lantern strings and lit Chinese signage.
+  const rng = mulberry32(0x51f00d);
+  const blocked = (x: number, z: number, m: number): boolean => {
+    for (const c of colliders) {
+      if (x > c.minX - m && x < c.maxX + m && z > c.minZ - m && z < c.maxZ + m) return true;
+    }
+    return false;
+  };
+  const keepOut: [number, number, number][] = [
+    [X(30), 52 * S, 7], // parked shuttle — you board it, keep the deck clear
+    [X(26), 16 * S, 4.5], // noodle stall
+    [X(52), 34 * S, 4], // player start
+  ];
+  const clearOf = (x: number, z: number, m: number): boolean =>
+    keepOut.every(([kx, kz, kr]) => Math.hypot(x - kx, z - kz) > kr + m);
+
+  // Trees: instanced trunks + canopies — the whole district costs 2 draw calls.
+  const treeSpots: { x: number; z: number; s: number; collide: boolean }[] = [];
+  const pushTree = (x: number, z: number, s = 1, collide = true): void => {
+    if (collide && (Math.abs(x - IX) > H - 2 || Math.abs(z) > H - 2)) collide = false; // beyond the walls: scenery
+    if (collide && (blocked(x, z, 1.1) || !clearOf(x, z, 1))) return;
+    for (const t of treeSpots) if (Math.hypot(t.x - x, t.z - z) < 2.6) return;
+    treeSpots.push({ x, z, s, collide });
+    if (collide) colliders.push(makeAABB(x, z, 0.7, 0.7, 3));
+  };
+
+  // Walk a polyline at fixed spacing, yielding position + unit direction.
+  const walkPolyline = (pts: Vec2[], spacing: number): { x: number; z: number; dx: number; dz: number }[] => {
+    const out: { x: number; z: number; dx: number; dz: number }[] = [];
+    let acc = spacing * 0.5;
+    for (let i = 1; i < pts.length; i++) {
+      const ax = pts[i - 1].x, az = pts[i - 1].z;
+      const dx = pts[i].x - ax, dz = pts[i].z - az;
+      const len = Math.hypot(dx, dz);
+      if (len < 0.01) continue;
+      const ux = dx / len, uz = dz / len;
+      for (let d = acc; d <= len; d += spacing) out.push({ x: ax + ux * d, z: az + uz * d, dx: ux, dz: uz });
+      acc = (((acc - len) % spacing) + spacing) % spacing;
+    }
+    return out;
+  };
+
+  // 周家渡路: the real arterial through the arena becomes a plane-tree boulevard
+  // (法国梧桐 rows on both sides, grass verge under them).
+  const zjdWays = data.roads.filter((r) => r.name === '周家渡路');
+  const zjdLine = zjdWays.length ? longestInside(zjdWays[0].pts, H - 5) : [];
+  const grassPatchM: THREE.Matrix4[] = [];
+  if (zjdLine.length > 1) {
+    for (const s of walkPolyline(zjdLine, 5)) {
+      const nx = -s.dz, nz = s.dx;
+      pushTree(s.x + nx * 3.4, s.z + nz * 3.4);
+      pushTree(s.x - nx * 3.4, s.z - nz * 3.4);
+      const ang = Math.atan2(s.dx, s.dz);
+      for (const side of [1, -1]) {
+        grassPatchM.push(
+          new THREE.Matrix4().makeRotationY(ang).setPosition(s.x + nx * side * 3.4, 0.014, s.z + nz * side * 3.4),
+        );
+      }
+    }
+  }
+
+  // Expo Axis: tree rows flanking the boulevard, lantern poles just inside them.
+  const C = { x: X(52), z: 0 };
+  const perp = { x: -AXIS.z, z: AXIS.x };
+  for (let t = -34; t <= 34.1; t += 6.4) {
+    for (const side of [1, -1]) {
+      pushTree(C.x + AXIS.x * t + perp.x * side * 8.8, C.z + AXIS.z * t + perp.z * side * 8.8);
+    }
+  }
+  const polePts: { x: number; z: number }[] = [];
+  const lanternM: THREE.Matrix4[] = [];
+  const capM: THREE.Matrix4[] = [];
+  const wireM: THREE.Matrix4[] = [];
+  const lanternString = (a: { x: number; z: number }, b: { x: number; z: number }, n: number): void => {
+    // the wire itself: a thin stretched box pole-top to pole-top, so the
+    // lanterns hang from something instead of floating
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const wm = new THREE.Matrix4().makeRotationY(Math.atan2(b.x - a.x, b.z - a.z));
+    wm.multiply(new THREE.Matrix4().makeScale(1, 1, len));
+    wm.setPosition((a.x + b.x) / 2, 4.08, (a.z + b.z) / 2);
+    wireM.push(wm);
+    for (let i = 1; i <= n; i++) {
+      const t = i / (n + 1);
+      const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+      const y = 4.0 - Math.sin(Math.PI * t) * 0.5; // sag between the poles
+      lanternM.push(new THREE.Matrix4().makeScale(1, 0.82, 1).setPosition(x, y, z));
+      capM.push(new THREE.Matrix4().setPosition(x, y + 0.16, z));
+    }
+  };
+  for (const side of [1, -1]) {
+    const row: { x: number; z: number }[] = [];
+    for (let t = -33; t <= 33.1; t += 11) {
+      const p = { x: C.x + AXIS.x * t + perp.x * side * 7.2, z: C.z + AXIS.z * t + perp.z * side * 7.2 };
+      if (blocked(p.x, p.z, 0.6) || !clearOf(p.x, p.z, 0.8)) continue;
+      if (row.length) lanternString(row[row.length - 1], p, 6);
+      row.push(p);
+      polePts.push(p);
+      lamps.push(p);
+    }
+  }
+
+  // Park benches on the plaza, facing the Axis.
+  for (const t of [-17, 0, 17]) {
+    const bx = C.x + AXIS.x * t + perp.x * 5.4, bz = C.z + AXIS.z * t + perp.z * 5.4;
+    if (blocked(bx, bz, 0.9) || !clearOf(bx, bz, 1)) continue;
+    const ry = Math.atan2(AXIS.x, AXIS.z);
+    add(box(1.7, 0.09, 0.55, M.wood, bx, 0.46, bz, ry));
+    add(box(1.7, 0.5, 0.08, M.wood, bx - Math.sin(ry) * 0.26, 0.72, bz - Math.cos(ry) * 0.26, ry));
+    colliders.push(makeAABB(bx, bz, 1.8, 0.75, 1));
+  }
+
+  // Azalea beds (杜鹃, the shrub of every Shanghai roundabout) between the
+  // plaza trees and ringing the Sun Valley cones.
+  const SHRUB = [0x4a7040, 0xc4587a, 0x8a5fb0, 0xc0392b, 0xd07aa0];
+  const shrubM: { m: THREE.Matrix4; c: number }[] = [];
+  const pushShrub = (x: number, z: number): void => {
+    if (blocked(x, z, 0.4)) return;
+    const s = 0.7 + rng() * 0.5;
+    shrubM.push({
+      m: new THREE.Matrix4().makeScale(s, s * (0.7 + rng() * 0.4), s).setPosition(x, 0.42 * s, z),
+      c: SHRUB[Math.floor(rng() * SHRUB.length)],
+    });
+  };
+  for (let t = -30.8; t <= 30.9; t += 6.4) {
+    for (const side of [1, -1]) {
+      pushShrub(C.x + AXIS.x * t + perp.x * side * 8.8, C.z + AXIS.z * t + perp.z * side * 8.8);
+    }
+  }
+  for (const [cx, cz] of [[36, 45], [52, 0], [69, -45]] as const) {
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + 0.6;
+      pushShrub(X(cx) + Math.sin(a) * 3.1, cz * S + Math.cos(a) * 3.1);
+    }
+  }
+
+  // 外星公园 ("Alien Park", the real OSM polygon south of the arena): grassed
+  // with a dense copse. It lies beyond the invisible walls — pure scenery.
+  const park = raw.parks?.[0];
+  if (park && park.pts.length > 3) {
+    const poly = park.pts.map((p) => ({ x: p.x * S, z: p.z * S }));
+    const shape = new THREE.Shape(poly.map((p) => new THREE.Vector2(p.x, p.z)));
+    const geo = new THREE.ShapeGeometry(shape);
+    geo.rotateX(-Math.PI / 2);
+    const grass = new THREE.Mesh(geo, M.grass);
+    grass.position.set(IX, 0.012, 0);
+    add(grass);
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const p of poly) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    let placed = 0, guard = 0;
+    while (placed < 30 && guard++ < 500) {
+      const px = x0 + rng() * (x1 - x0), pz = z0 + rng() * (z1 - z0);
+      if (!pointInPoly({ x: px, z: pz }, poly)) continue;
+      pushTree(px + IX, pz, 0.9 + rng() * 0.8, false);
+      placed++;
+    }
+    let shrubs = 0;
+    guard = 0;
+    while (shrubs < 12 && guard++ < 200) {
+      const px = x0 + rng() * (x1 - x0), pz = z0 + rng() * (z1 - z0);
+      if (!pointInPoly({ x: px, z: pz }, poly)) continue;
+      pushShrub(px + IX, pz);
+      shrubs++;
+    }
+  }
+
+  // Bake the instanced greenery.
+  const trunkGeo = new THREE.CylinderGeometry(0.14, 0.22, 3.2, 5);
+  const leafGeo = new THREE.IcosahedronGeometry(1, 0);
+  const trunks = new THREE.InstancedMesh(trunkGeo, M.trunk, treeSpots.length);
+  const leaves = new THREE.InstancedMesh(leafGeo, M.leafInst, treeSpots.length);
+  trunks.castShadow = leaves.castShadow = true;
+  const mtx = new THREE.Matrix4();
+  const col = new THREE.Color();
+  const SH_LEAF = [0x4a7040, 0x3f6b3a, 0x5c7d3a, 0x6b8f4a, 0xc9a227, 0xb98f22]; // 梧桐 greens + ginkgo gold
+  treeSpots.forEach((t, i) => {
+    const s = t.s;
+    mtx.makeScale(s, s * (0.85 + rng() * 0.3), s).setPosition(t.x, 1.6 * s, t.z);
+    trunks.setMatrixAt(i, mtx);
+    const c = s * (1.7 + rng() * 0.7);
+    mtx.makeScale(c, c * (0.75 + rng() * 0.35), c).setPosition(t.x, (3.0 + c * 0.5) * s, t.z);
+    leaves.setMatrixAt(i, mtx);
+    col.setHex(SH_LEAF[Math.floor(rng() * SH_LEAF.length)]);
+    leaves.setColorAt(i, col);
+  });
+  if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+  add(trunks);
+  add(leaves);
+
+  if (grassPatchM.length) {
+    const pg = new THREE.PlaneGeometry(2.6, 5.6);
+    pg.rotateX(-Math.PI / 2);
+    const patches = new THREE.InstancedMesh(pg, M.grassPatch, grassPatchM.length);
+    grassPatchM.forEach((m, i) => patches.setMatrixAt(i, m));
+    add(patches);
+  }
+  if (shrubM.length) {
+    const shrubMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.55, 0), M.leafInst, shrubM.length);
+    shrubM.forEach((s, i) => {
+      shrubMesh.setMatrixAt(i, s.m);
+      shrubMesh.setColorAt(i, col.setHex(s.c));
+    });
+    if (shrubMesh.instanceColor) shrubMesh.instanceColor.needsUpdate = true;
+    add(shrubMesh);
+  }
+  if (polePts.length) {
+    const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07, 0.1, 4.2, 6), M.poleRed, polePts.length);
+    const knobs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 6, 6), M.lanternGold, polePts.length);
+    polePts.forEach((p, i) => {
+      poles.setMatrixAt(i, new THREE.Matrix4().setPosition(p.x, 2.1, p.z));
+      knobs.setMatrixAt(i, new THREE.Matrix4().setPosition(p.x, 4.25, p.z));
+      colliders.push(makeAABB(p.x, p.z, 0.25, 0.25, 4));
+    });
+    add(poles);
+    add(knobs);
+  }
+  if (lanternM.length) {
+    const wires = new THREE.InstancedMesh(new THREE.BoxGeometry(0.025, 0.025, 1), M.pole, wireM.length);
+    wireM.forEach((m, i) => wires.setMatrixAt(i, m));
+    add(wires);
+    const bodies = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 8, 6), M.lantern, lanternM.length);
+    lanternM.forEach((m, i) => bodies.setMatrixAt(i, m));
+    const caps = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.08, 0.1, 0.07, 6), M.lanternGold, capM.length);
+    capM.forEach((m, i) => caps.setMatrixAt(i, m));
+    add(bodies);
+    add(caps);
+  }
+
+  // Lit Chinese signage on the neon towers, facing the plaza.
+  const SIGN_TEXT = ['上海欢迎您', '世博轴', '中华艺术宫', '百货大楼', '世博源'];
+  towers.forEach(([tx, tz, s, h], i) => {
+    const cxp = X(tx), czp = tz * S, mh = h * S;
+    const dx = C.x - cxp, dz = C.z - czp;
+    const d = Math.hypot(dx, dz) || 1;
+    const m = signMesh(SIGN_TEXT[i], 1.7, 5.8, true, '#a3232b', '#ffd75e');
+    m.position.set(cxp + (dx / d) * (s * S / 2 + 0.12), mh * 0.55, czp + (dz / d) * (s * S / 2 + 0.12));
+    m.rotation.y = Math.atan2(dx, dz);
+    add(m);
+  });
+
+  // Green street-name plate (the real Shanghai design) at the 周家渡路 entrance.
+  if (zjdLine.length > 1) {
+    const p0 = zjdLine[0];
+    const sx = p0.x + 2.6, sz = p0.z;
+    if (!blocked(sx, sz, 0.5) && clearOf(sx, sz, 0.5)) {
+      add(box(0.09, 2.9, 0.09, M.pole, sx, 1.45, sz));
+      const plate = signMesh('周家渡路', 2.3, 0.58, false, '#1d5c48', '#f2f5f2');
+      plate.position.set(sx, 2.75, sz);
+      plate.rotation.y = Math.atan2(C.x - sx, C.z - sz);
+      add(plate);
+      colliders.push(makeAABB(sx, sz, 0.25, 0.25, 3));
+    }
+  }
+
+  // A single 茶 lantern-board by the noodle stall — every old street has one.
+  const tea = signMesh('茶', 0.85, 1.7, true, '#7a1f1f', '#ffe9b0');
+  tea.position.set(X(23.6), 2.5, 16 * S);
+  tea.rotation.y = Math.PI / 2 + 0.4;
+  add(tea);
+
+  // The Expo Axis canopy: the real OSM roof footprint (skipped as 'roof'
+  // above) rebuilt as a floating translucent membrane on white columns —
+  // the Sun Valley cones poke right through it, exactly like the real thing.
+  {
+    const cx0 = Math.max(21 * S, -H + 1), cx1 = Math.min(81 * S, H - 1);
+    const cz0 = 39 * S, cz1 = Math.min(96 * S, H - 1);
+    add(box(cx1 - cx0, 0.22, cz1 - cz0, M.canopy, (cx0 + cx1) / 2 + IX, 6.9, (cz0 + cz1) / 2));
+    for (const [px, pz] of [
+      [cx0 + 2.5, cz0 + 2.5], [cx1 - 2.5, cz0 + 2.5], [cx0 + 2.5, cz1 - 2.5], [cx1 - 2.5, cz1 - 2.5],
+    ] as const) {
+      const x = px + IX;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 6.9, 8), M.white);
+      pillar.position.set(x, 3.45, pz);
+      add(pillar);
+      colliders.push(makeAABB(x, pz, 0.6, 0.6, 7));
+    }
   }
 
   // --- the return Flygbussen, parked on the plaza --------------------------------
