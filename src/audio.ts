@@ -129,6 +129,11 @@ export const sfx = {
     } else if (kind === 'bazooka') {
       playNoise(0.5, 500, 0.5, 0.8);
       playTone(60, 0.4, 0.6, 'sawtooth', -30);
+    } else if (kind === 'bfg') {
+      // deep electric thunderclap: the gun clears the room before the ball lands
+      playNoise(0.45, 700, 0.5, 0.6);
+      playTone(55, 0.5, 0.7, 'sawtooth', -35);
+      playTone(320, 0.3, 0.25, 'square', -260);
     } else {
       playNoise(0.15, 2200, 0.9, 0.5);
       playTone(180, 0.1, 0.25, 'square', -120);
@@ -137,6 +142,10 @@ export const sfx = {
   explosion(): void {
     playNoise(0.9, 220, 0.4, 1.0);
     playTone(45, 0.8, 0.8, 'sine', -25);
+  },
+  flame(): void {
+    // one short roar of the pilot stream; fired 20x/s it becomes a continuous belch
+    playNoise(0.09, 650, 0.8, 0.2);
   },
   swing(): void {
     playNoise(0.18, 700, 1.2, 0.25);

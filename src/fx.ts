@@ -171,6 +171,47 @@ export class Fx {
     this.shake = Math.min(1, this.shake + amount);
   }
 
+  /** Flamethrower stream: a burst of fire racing down the aim direction. */
+  flameJet(x: number, y: number, z: number, dx: number, dy: number, dz: number): void {
+    const c1 = new THREE.Color(0xff9933);
+    const c2 = new THREE.Color(0xffdd55);
+    for (let i = 0; i < 4; i++) {
+      const sp = 13 + Math.random() * 5;
+      this.emit(
+        x, y, z,
+        dx * sp + (Math.random() - 0.5) * 1.8,
+        dy * sp + (Math.random() - 0.5) * 1.8 + 0.6,
+        dz * sp + (Math.random() - 0.5) * 1.8,
+        0.3 + Math.random() * 0.35, Math.random() < 0.5 ? c1 : c2,
+        -2.2, // hot gas rises
+      );
+    }
+  }
+
+  /** A burning zombie: small orange licks peeling off the body. */
+  burnFx(x: number, y: number, z: number): void {
+    const c = new THREE.Color(Math.random() < 0.5 ? 0xff7722 : 0xffcc44);
+    this.emit(
+      x + (Math.random() - 0.5) * 0.4, y + Math.random() * 0.7, z + (Math.random() - 0.5) * 0.4,
+      (Math.random() - 0.5) * 0.6, 1.2 + Math.random(), (Math.random() - 0.5) * 0.6,
+      0.25 + Math.random() * 0.3, c,
+      -2.5,
+    );
+  }
+
+  /** BFG plasma ball trail: glowing green motes. */
+  bfgTrail(x: number, y: number, z: number): void {
+    const c = new THREE.Color(0x55ff77);
+    for (let i = 0; i < 2; i++) {
+      this.emit(
+        x + (Math.random() - 0.5) * 0.2, y + (Math.random() - 0.5) * 0.2, z + (Math.random() - 0.5) * 0.2,
+        (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5,
+        0.25 + Math.random() * 0.3, c,
+        -0.5,
+      );
+    }
+  }
+
   /** Fatality: burst the corpse into flying gore chunks + a blood cloud. */
   gore(x: number, y: number, z: number): void {
     // blood cloud

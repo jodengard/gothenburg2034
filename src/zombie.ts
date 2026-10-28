@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
-import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT, THREAT } from './config';
+import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT, THREAT, FLAME } from './config';
 import { ThrowableObject } from './world';
 import { attacksFromBehind } from './pack';
 
@@ -80,6 +80,9 @@ export interface Zombie {
   lastHitByPlayer: boolean;
   /** Set by kill() when this death plays as an exploding fatality. */
   exploded: boolean;
+  /** Flamethrower: seconds of burn left; the corpse chars while they tick. */
+  burnT: number;
+  burnTick: number;
   animT: number;
   fallDir: number;
   deadT: number;
@@ -123,6 +126,8 @@ const CLOTHES = [
   new THREE.MeshStandardMaterial({ color: 0x3a3a44, roughness: 0.9 }),
 ];
 const FLASH = new THREE.MeshStandardMaterial({ color: 0xffdddd, emissive: 0x661111 });
+// a flaming zombie wears the fire: orange emissive skin while the burn ticks
+const BURNING = new THREE.MeshStandardMaterial({ color: 0xff6a1a, emissive: 0xcc3300, roughness: 0.9 });
 // the fat ones wear what's left of an elasticated waistband
 const FAT_SUIT = new THREE.MeshStandardMaterial({ color: 0x4e5a2a, roughness: 0.95 });
 
@@ -207,7 +212,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -255,6 +260,8 @@ export class ZombieManager {
     zom.lastHitHead = false;
     zom.lastHitByPlayer = false;
     zom.exploded = false;
+    zom.burnT = 0;
+    zom.burnTick = 0;
     zom.deadT = 0;
     zom.hitFlash = 0;
     zom.mesh.visible = true;
@@ -271,6 +278,14 @@ export class ZombieManager {
   }
 
   /** Apply damage; returns true if killed. `opts` attributes the hit (headshot/fatality). */
+  /** Set a corpse alight (flamethrower): chars the skin, ticks burn damage.
+   * Re-igniting refreshes the duration instead of stacking. */
+  ignite(z: Zombie, seconds: number): void {
+    if (z.state === 'dead') return;
+    z.burnT = Math.max(z.burnT, seconds);
+    z.burnTick = Math.min(z.burnTick, 0.15); // first tick lands fast
+  }
+
   damage(
     z: Zombie,
     amount: number,
@@ -440,6 +455,23 @@ export class ZombieManager {
           z.bodyMat = z.fat ? FAT_SUIT : CLOTHES[z.id % CLOTHES.length];
           z.bodyMesh.material = z.bodyMat;
         }
+      }
+
+      // burning (flamethrower): charred tint + periodic damage ticks. The
+      // tick goes through damage(), so burn kills keep attribution — a
+      // burning boomer still detonates on death like any other.
+      if (z.burnT > 0 && z.state !== 'dead') {
+        z.burnT -= adt;
+        z.bodyMesh.material = BURNING;
+        z.burnTick -= adt;
+        if (z.burnTick <= 0) {
+          z.burnTick = FLAME.burnTick;
+          this.damage(z, FLAME.burnDps * FLAME.burnTick, 0, 0, { byPlayer: true });
+        }
+      } else if (z.burnT <= 0 && z.bodyMesh.material === BURNING) {
+        z.burnT = 0;
+        z.bodyMat = z.fat ? FAT_SUIT : CLOTHES[z.id % CLOTHES.length];
+        z.bodyMesh.material = z.bodyMat;
       }
 
       this.updateZombie(z, adt, dt, dist, player, throwables);

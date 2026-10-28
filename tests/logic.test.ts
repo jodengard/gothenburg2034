@@ -11,7 +11,7 @@ import { Zombie, PlayerView, Role, ZombieManager, ZombieEvents } from '../src/zo
 import { GasClouds } from '../src/gas';
 import { World } from '../src/world';
 import { makePath, samplePath, distPointSeg } from '../src/traffic';
-import { THREAT, PACK, FAT, ZOMBIE } from '../src/config';
+import { THREAT, PACK, FAT, ZOMBIE, FLAME, WEAPONS } from '../src/config';
 
 // --- RNG ---------------------------------------------------------------------
 describe('RNG', () => {
@@ -562,5 +562,57 @@ describe('traffic paths', () => {
     expect(distPointSeg(5, 5, 0, 0, 10, 0)).toBeCloseTo(5);
     expect(distPointSeg(15, 3, 0, 0, 10, 0)).toBeCloseTo(Math.hypot(5, 3)); // past the end -> to endpoint
     expect(distPointSeg(-4, 3, 0, 0, 10, 0)).toBeCloseTo(5); // before the start
+  });
+});
+
+// --- Flamethrower & BFG --------------------------------------------------------
+describe('flamethrower & BFG', () => {
+  const farPlayer: PlayerView = {
+    pos: { x: 50, z: 50 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+  };
+
+  it('weapon defs are complete and the BFG only drops at five stars', () => {
+    for (const id of ['flame', 'bfg']) {
+      const def = WEAPONS[id];
+      expect(def).toBeTruthy();
+      expect(def.dropWeightByThreat).toHaveLength(5);
+    }
+    expect(WEAPONS.bfg.dropWeightByThreat.slice(0, 4).every((w) => w === 0)).toBe(true);
+    expect(WEAPONS.bfg.dropWeightByThreat[4]).toBeGreaterThan(0);
+  });
+
+  it('burning zombies tick damage with player attribution', () => {
+    const log: string[] = [];
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents(log));
+    const z = zm.spawn(0, 0, 1, 1);
+    z.hp = 100;
+    zm.ignite(z, FLAME.igniteSeconds);
+    expect(z.burnT).toBeGreaterThan(0);
+    const hp0 = z.hp;
+    for (let i = 0; i < 60; i++) zm.update(1 / 60, farPlayer, 1, []);
+    expect(hp0 - z.hp).toBeGreaterThanOrEqual(FLAME.burnDps * FLAME.burnTick); // ≥ one full tick landed
+    expect(z.lastHitByPlayer).toBe(true);
+    zm.clearAll();
+  });
+
+  it('burn finishes wounded zombies', () => {
+    const log: string[] = [];
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents(log));
+    const z = zm.spawn(0, 0, 1, 1);
+    z.hp = 5; // one burn tick is plenty
+    zm.ignite(z, FLAME.igniteSeconds);
+    for (let i = 0; i < 30; i++) zm.update(1 / 60, farPlayer, 1, []);
+    expect(z.state).toBe('dead');
+    expect(log).toContain('kill');
+    zm.clearAll();
+  });
+
+  it('re-igniting refreshes the burn instead of stacking it', () => {
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents([]));
+    const z = zm.spawn(0, 0, 1, 1);
+    zm.ignite(z, FLAME.igniteSeconds);
+    zm.ignite(z, FLAME.igniteSeconds);
+    expect(z.burnT).toBeLessThanOrEqual(FLAME.igniteSeconds);
+    zm.clearAll();
   });
 });

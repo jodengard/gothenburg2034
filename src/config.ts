@@ -248,9 +248,36 @@ export const WEAPONS: Record<string, WeaponDef> = {
     splashRadius: 5.5, recoil: 0.05,
     dropWeightByThreat: [0, 0, 0, 1, 2], color: 0x33691e,
   },
+  // Flamethrower: ammo counts fuel units, burned 20/s while the trigger is
+  // held. The stream itself is modest damage — the ignition does the work.
+  flame: {
+    id: 'flame', name: 'Flamethrower', kind: 'gun', damage: 6, range: 11,
+    cooldown: 0.05, magSize: 100, startReserve: 0, pickupReserve: 150,
+    auto: true, recoil: 0.002,
+    dropWeightByThreat: [0, 1, 2, 2, 2], color: 0xb3401a,
+  },
+  // BFG-9000: Quake II's green sun. Slow plasma ball, absurd splash.
+  bfg: {
+    id: 'bfg', name: 'BFG-9000', kind: 'projectile', damage: 320, range: 200,
+    cooldown: 1.4, magSize: 4, startReserve: 0, pickupReserve: 12,
+    splashRadius: 9, recoil: 0.06,
+    dropWeightByThreat: [0, 0, 0, 0, 1], color: 0x2fbf4f,
+  },
 };
 
 export const CHAINSAW_START_FUEL = 100;
+
+export const FLAME = {
+  coneHalf: 0.24, // radians, half-angle of the ignition cone
+  igniteSeconds: 3, // burn duration per hit (refreshed, not stacked)
+  burnDps: 22, // damage per second while burning
+  burnTick: 0.5, // seconds between burn damage ticks
+};
+
+export const BFG = {
+  speed: 26, // plasma ball m/s — slow enough to watch it erase a block
+  selfDmg: 55, // point-blank stupidity tax
+};
 
 export const THROWABLE = {
   damage: 14,

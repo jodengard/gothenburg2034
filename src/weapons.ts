@@ -8,6 +8,8 @@ export const RELOAD_TIME: Record<string, number> = {
   shotgun: 2.2,
   ak: 1.8,
   bazooka: 2.0,
+  flame: 2.6,
+  bfg: 2.8,
 };
 
 export class WeaponState {

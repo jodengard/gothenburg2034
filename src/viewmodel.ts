@@ -32,6 +32,11 @@ export class ViewModel {
     if (this.weapon) this.group.remove(this.weapon);
     this.weapon = this.build(id);
     this.group.add(this.weapon);
+    // themed muzzle flash: the BFG arcs green, the flamethrower spits orange
+    const flash: Record<string, number> = { flame: 0xff8830, bfg: 0x66ff88 };
+    const c = flash[id] ?? 0xffcc66;
+    this.muzzle.color.setHex(c);
+    (this.muzzleSprite.material as THREE.MeshBasicMaterial).color.setHex(c);
   }
 
   private build(id: string): THREE.Group {
@@ -78,6 +83,27 @@ export class ViewModel {
         add(0.12, 0.12, 0.9, mat, 0, 0, -0.35);
         add(0.16, 0.16, 0.14, dark, 0, 0, -0.8);
         break;
+      case 'flame': {
+        // flamethrower: blocky body + barrel, fuel tank on the back, lit pilot
+        const tank = new THREE.MeshLambertMaterial({ color: 0x7a2d12 });
+        const pilot = new THREE.MeshLambertMaterial({ color: 0xff7722, emissive: 0xcc4400 });
+        add(0.1, 0.16, 0.34, mat, 0, 0, -0.18);
+        add(0.05, 0.06, 0.42, dark, 0, 0.02, -0.5);
+        add(0.05, 0.12, 0.06, dark, 0, -0.1, -0.02);
+        add(0.13, 0.13, 0.12, tank, 0, 0.11, 0.08);
+        add(0.04, 0.04, 0.05, pilot, 0, 0.02, -0.73);
+        break;
+      }
+      case 'bfg': {
+        // the Big Friendly Gun: fat green cannon, muzzle ring, glowing core
+        const ring = new THREE.MeshLambertMaterial({ color: 0x1c2a1c });
+        const core = new THREE.MeshLambertMaterial({ color: 0x39ff6a, emissive: 0x1faa44 });
+        add(0.16, 0.16, 0.66, mat, 0, 0.03, -0.32);
+        add(0.22, 0.22, 0.14, ring, 0, 0.03, -0.7);
+        add(0.06, 0.13, 0.07, dark, 0, -0.1, -0.04);
+        add(0.09, 0.09, 0.22, core, 0, 0.15, -0.3);
+        break;
+      }
       default:
         add(0.06, 0.06, 0.5, mat, 0, 0, -0.3);
     }

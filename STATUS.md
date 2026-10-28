@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 48 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 53 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,32 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Shanghai 2.0 (shanghai-2.0 branch — six stars forever, pressure without end) — verified
+## Current milestone: Weapons — Flamethrower & BFG-9000 — verified
+
+- **Flamethrower** (`flame`): auto weapon, ammo = fuel (100-unit tank, 20/s burn rate,
+  150 reserve, 2.6 s reload). The stream is a 11 m / 14° half-angle cone that **stops at walls**
+  (per-hit LOS check — no roasting through concrete): 120 dps direct + **ignition** —
+  burning zombies tick 22 dps for 3 s (refresh, not stack). Burn goes through
+  `damage()` with player attribution, so a burning boomer still detonates on death.
+  Charred orange emissive suit while burning + fire-lick particles (`fx.burnFx`) +
+  short roar per tick (`sfx.flame`) that stacks into a continuous belch.
+- **BFG-9000** (`bfg`): Quake II's green sun. Slow (26 m/s) glowing plasma ball with a
+  pulsing mesh + green mote trail (`fx.bfgTrail`); detonates on zombie/wall/ground for
+  **320 damage in a 9 m radius** (bazooka: 130/5.5) with heavy knockback and a 55 self
+  damage tax at point-blank. Drops only at five-star threat. Deep thunderclap fire
+  sound (`sfx.gunshot('bfg')`).
+- **Plumbing**: `ProjectileManager` gained a third kind (`bfg`) with per-slot mesh
+  swapping (`meshKind`) and `onExplosion(pos, big)` so the handler picks the right
+  blast def; `Zombie` gained `burnT/burnTick` + `ignite()`; view models are procedural
+  (flamethrower: body/barrel/grip/tank/pilot-light; BFG: fat cannon + muzzle ring +
+  glowing core) with themed muzzle flash colors (orange/green).
+- **Verified live**: flame — 10 fuel burned in 0.67 s, `burnT` applied, 104 hp lost,
+  burn finished a 30 hp zombie (`state='dead'`), 6 zombies ablaze in one sweep; BFG —
+  ball mid-flight, boom on contact, **12 kills from one shot**; pickup flow (E over a
+  crate) swaps both view models (5/4 meshes) and ammo pools. 53/53 unit tests
+  (4 new: drop tables, burn ticks + attribution, burn kills, ignite refresh-not-stack).
+
+## Previous milestone: Shanghai 2.0 (shanghai-2.0 branch — six stars forever, pressure without end) — verified
 
 - **The HUD lies on purpose**: Shanghai's star row now stays pinned at 6 forever
   (`state.displayThreat`), while a hidden pressure level climbs +1 every 30 s and never

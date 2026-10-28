@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY, FAT } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY, FAT, FLAME, BFG } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -287,22 +287,23 @@ const atmos = buildAtmosphere(scene, world, sunDir);
 const halloween = buildHalloween(scene, world, atmos.bonfirePos);
 
 const projectiles = new ProjectileManager(scene, world.colliders, zombies, fx, {
-  onExplosion(pos) {
-    const def = WEAPONS.bazooka;
+  onExplosion(pos, big) {
+    const def = big ? WEAPONS.bfg : WEAPONS.bazooka;
+    const radius = def.splashRadius ?? 5;
     for (const z of zombies.active) {
       if (z.state === 'dead') continue;
       const d = Math.hypot(z.pos.x - pos.x, z.pos.z - pos.z);
-      if (d < (def.splashRadius ?? 5)) {
-        const dmg = def.damage * (1 - d / (def.splashRadius ?? 5));
-        const kx = ((z.pos.x - pos.x) / (d || 1)) * 6;
-        const kz = ((z.pos.z - pos.z) / (d || 1)) * 6;
+      if (d < radius) {
+        const dmg = def.damage * (1 - d / radius);
+        const kx = ((z.pos.x - pos.x) / (d || 1)) * (big ? 10 : 6);
+        const kz = ((z.pos.z - pos.z) / (d || 1)) * (big ? 10 : 6);
         if (zombies.damage(z, dmg, kx, kz, { byPlayer: true })) hud.hitMarker();
       }
     }
     // self-damage if player too close
     const pd = Math.hypot(player.pos.x - pos.x, player.pos.z - pos.z);
-    if (pd < (def.splashRadius ?? 5) * 0.8) {
-      player.damage(30 * (1 - pd / ((def.splashRadius ?? 5) * 0.8)), pos.x, pos.z);
+    if (pd < radius * 0.8) {
+      player.damage((big ? BFG.selfDmg : 30) * (1 - pd / (radius * 0.8)), pos.x, pos.z);
       sfx.playerHurt();
       fx.addShake(0.5);
     }
@@ -672,12 +673,49 @@ function fireWeapon(): void {
     return;
   }
 
+  if (def.id === 'flame') {
+    // the stream: a cone of fire that stops at walls — no roasting through concrete
+    sfx.flame();
+    viewModel.triggerFire();
+    const jet = eye.clone().addScaledVector(dir, 0.55);
+    fx.flameJet(jet.x, jet.y - 0.12, jet.z, dir.x, dir.y, dir.z);
+    if (Math.random() < 0.25) fx.smoke(jet.x, jet.y - 0.25, jet.z);
+    player.addRecoil(def.recoil ?? 0);
+    const hits = zombies.meleeSweep(eye, player.flatDir, def.range, FLAME.coneHalf);
+    for (const z of hits) {
+      const dx = z.pos.x - eye.x;
+      const dz = z.pos.z - eye.z;
+      const d = Math.hypot(dx, dz);
+      let blocked = false;
+      if (d > 0.001) {
+        for (const c of world.colliders) {
+          if (rayAABB({ x: eye.x, z: eye.z }, { x: dx / d, z: dz / d }, d, c) !== null) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (blocked) continue;
+      zombies.damage(z, def.damage, dir.x * 0.5, dir.z * 0.5, { byPlayer: true });
+      zombies.ignite(z, FLAME.igniteSeconds);
+      if (Math.random() < 0.3) {
+        fx.blood(z.pos.x, 1.2, z.pos.z, dir.x, dir.z);
+        sfx.hitFlesh();
+      }
+      hud.hitMarker();
+    }
+    return;
+  }
+
   if (def.kind === 'projectile') {
-    sfx.gunshot('bazooka');
+    const isBfg = def.id === 'bfg';
+    sfx.gunshot(isBfg ? 'bfg' : 'bazooka');
     viewModel.triggerFire();
     player.addRecoil(def.recoil ?? 0.04);
-    fx.addShake(0.25);
-    projectiles.fireRocket(eye.clone().addScaledVector(dir, 0.6), dir.clone());
+    fx.addShake(isBfg ? 0.5 : 0.25);
+    const muzzle = eye.clone().addScaledVector(dir, 0.6);
+    if (isBfg) projectiles.fireBfg(muzzle, dir.clone());
+    else projectiles.fireRocket(muzzle, dir.clone());
     return;
   }
 
@@ -1132,6 +1170,12 @@ function step(dt: number): void {
     onBark: () => sfx.growl(), // the pack howls when it spots you / pushes — audible tactics
   });
   zombies.update(dt, playerView, state.threatLevel, activeWorld.throwables);
+  // burning zombies flicker: fire particles peel off the charred suits
+  for (const z of zombies.active) {
+    if (z.burnT > 0 && z.state !== 'dead' && Math.random() < 0.12) {
+      fx.burnFx(z.pos.x, 0.9, z.pos.z);
+    }
+  }
   gas.update(dt, player.pos, (dmg, x, z) => {
     // breathing in someone's remains is not pleasant
     if (player.damage(dmg, x, z)) {
