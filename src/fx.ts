@@ -212,6 +212,17 @@ export class Fx {
     }
   }
 
+  /** Rare weapon drop: cold blue sparkles rising off the crate. */
+  shimmer(x: number, y: number, z: number): void {
+    const c = new THREE.Color(Math.random() < 0.5 ? 0x55aaff : 0x99ddff);
+    this.emit(
+      x + (Math.random() - 0.5) * 0.7, y, z + (Math.random() - 0.5) * 0.7,
+      (Math.random() - 0.5) * 0.3, 0.8 + Math.random() * 0.8, (Math.random() - 0.5) * 0.3,
+      0.4 + Math.random() * 0.4, c,
+      -1.8, // drifts up like cold fireflies
+    );
+  }
+
   /** Fatality: burst the corpse into flying gore chunks + a blood cloud. */
   gore(x: number, y: number, z: number): void {
     // blood cloud

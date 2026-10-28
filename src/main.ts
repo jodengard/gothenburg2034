@@ -10,7 +10,7 @@ import { buildAtmosphere, Atmosphere } from './atmos';
 import { buildHalloween } from './halloween';
 import { Traffic } from './traffic';
 import { Player } from './player';
-import { WeaponState, rollDrop, RELOAD_TIME } from './weapons';
+import { WeaponState, rollDrop, RELOAD_TIME, UNIQUE_DROPS, dropAllowed } from './weapons';
 import { ViewModel } from './viewmodel';
 import { ZombieManager, Zombie } from './zombie';
 import { PackManager } from './pack';
@@ -225,7 +225,7 @@ const helpers = new BunnyHelpers(scene, world.colliders);
 const packs = new PackManager();
 const director = new Director();
 
-const pickups: { weaponId: string; pos: THREE.Vector3; mesh: THREE.Group }[] = [];
+const pickups: { weaponId: string; pos: THREE.Vector3; mesh: THREE.Group; shimmer?: THREE.PointLight }[] = [];
 
 const zombies = new ZombieManager(scene, world.colliders, {
   onPlayerDamage(amount, x, z) {
@@ -251,7 +251,8 @@ const zombies = new ZombieManager(scene, world.colliders, {
       fx.blood(z.pos.x, 1.1, z.pos.z);
     }
     const drop = rollDrop(state.threatLevel, rng);
-    if (drop) spawnPickup(drop, z.pos.x, z.pos.z);
+    // unique rule: only one flamethrower/BFG lies in the world at a time
+    if (drop && dropAllowed(drop, pickups.map((p) => p.weaponId))) spawnPickup(drop, z.pos.x, z.pos.z);
     // carrots: scooter-riding hooligans carry the good stuff — a carrot
     // summons a Lisebergskanin kickbike champion to fight at your side
     if (rng.chance(z.wasRiding ? BUNNY.riderDropChance : BUNNY.dropChance)) {
@@ -447,19 +448,27 @@ function shuttleNear(): boolean {
 // --- Pickups ----------------------------------------------------------------
 function spawnPickup(weaponId: string, x: number, z: number): void {
   const def = WEAPONS[weaponId];
+  const rare = UNIQUE_DROPS.has(weaponId);
   const g = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ color: def.color, emissive: 0x222211 });
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.12), mat);
   bar.position.y = 0.35;
   const glow = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 0.03, 0.3),
-    new THREE.MeshBasicMaterial({ color: 0xffd75e, transparent: true, opacity: 0.5 }),
+    // the heavy rarities are marked with a cold blue glow instead of the usual gold
+    new THREE.MeshBasicMaterial({ color: rare ? 0x4488ff : 0xffd75e, transparent: true, opacity: 0.5 }),
   );
   glow.position.y = 0.06;
   g.add(bar, glow);
+  let shimmer: THREE.PointLight | undefined;
+  if (rare) {
+    shimmer = new THREE.PointLight(0x4488ff, 2.2, 6);
+    shimmer.position.y = 0.5;
+    g.add(shimmer);
+  }
   g.position.set(x, 0.3, z);
   scene.add(g);
-  pickups.push({ weaponId, pos: new THREE.Vector3(x, 0.3, z), mesh: g });
+  pickups.push({ weaponId, pos: new THREE.Vector3(x, 0.3, z), mesh: g, shimmer });
 }
 
 function clearPickups(): void {
@@ -528,6 +537,11 @@ function updatePickups(dt: number): void {
   for (const p of pickups) {
     p.mesh.rotation.y += dt * 1.6;
     p.mesh.position.y = 0.3 + Math.sin(state.time * 2 + p.pos.x) * 0.06;
+    if (p.shimmer) {
+      // the rare ones breathe cold blue light and shed rising sparkles
+      p.shimmer.intensity = 1.6 + Math.sin(state.time * 6 + p.pos.z) * 1.1;
+      if (Math.random() < 0.3) fx.shimmer(p.pos.x, 0.45, p.pos.z);
+    }
     const d = Math.hypot(p.pos.x - player.pos.x, p.pos.z - player.pos.z);
     if (d < bestD) {
       bestD = d;

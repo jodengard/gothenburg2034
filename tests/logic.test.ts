@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { RNG } from '../src/rng';
 import { makeAABB, resolveCircleAABB, rayAABB, segmentBlocked, resolveCircleWorld, SpatialHash, invalidateColliderGrid } from '../src/collision';
-import { WeaponState, rollDrop } from '../src/weapons';
+import { WeaponState, rollDrop, dropAllowed } from '../src/weapons';
 import { threatLevelFor, Director } from '../src/director';
 import { computeRoles, PackManager, attacksFromBehind, Pack } from '../src/pack';
 import { shanghaiThreatFor, threatParams } from '../src/director';
@@ -614,5 +614,15 @@ describe('flamethrower & BFG', () => {
     zm.ignite(z, FLAME.igniteSeconds);
     expect(z.burnT).toBeLessThanOrEqual(FLAME.igniteSeconds);
     zm.clearAll();
+  });
+
+  it('only one flamethrower/BFG may lie in the world at a time', () => {
+    expect(dropAllowed('flame', [])).toBe(true);
+    expect(dropAllowed('bfg', ['flame'])).toBe(false); // the other rare one counts
+    expect(dropAllowed('flame', ['bfg'])).toBe(false);
+    expect(dropAllowed('flame', ['flame'])).toBe(false);
+    expect(dropAllowed('flame', ['ak', 'pistol'])).toBe(true); // normals don't block
+    expect(dropAllowed('ak', ['flame'])).toBe(true); // nor are they blocked by it
+    expect(dropAllowed('bfg', ['ak', 'bfg'])).toBe(false);
   });
 });

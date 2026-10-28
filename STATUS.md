@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 53 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 54 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -40,11 +40,18 @@ small **Shanghai Expo** arena — a parked return coach sends you back to Göteb
   blast def; `Zombie` gained `burnT/burnTick` + `ignite()`; view models are procedural
   (flamethrower: body/barrel/grip/tank/pilot-light; BFG: fat cannon + muzzle ring +
   glowing core) with themed muzzle flash colors (orange/green).
+- **Unique drops + blue shimmer**: only ONE flamethrower/BFG may lie in the world at a
+  time (`dropAllowed` in `weapons.ts` — a rare never drops while any rare pickup exists;
+  normal weapons unaffected). The rare crates glow **cold blue** instead of gold, carry
+  a pulsing blue point light and shed rising `fx.shimmer` sparkles so they spot
+  themselves across the arena. Live: 300 kills at five stars → 45 drops, ~7 rares
+  rolled, exactly 1 existed; light pulses, sparkles rise.
 - **Verified live**: flame — 10 fuel burned in 0.67 s, `burnT` applied, 104 hp lost,
   burn finished a 30 hp zombie (`state='dead'`), 6 zombies ablaze in one sweep; BFG —
   ball mid-flight, boom on contact, **12 kills from one shot**; pickup flow (E over a
-  crate) swaps both view models (5/4 meshes) and ammo pools. 53/53 unit tests
-  (4 new: drop tables, burn ticks + attribution, burn kills, ignite refresh-not-stack).
+  crate) swaps both view models (5/4 meshes) and ammo pools. 54/54 unit tests
+  (5 new: drop tables, burn ticks + attribution, burn kills, ignite refresh-not-stack,
+  unique-drop rule).
 
 ## Previous milestone: Shanghai 2.0 (shanghai-2.0 branch — six stars forever, pressure without end) — verified
 

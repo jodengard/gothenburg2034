@@ -112,6 +112,16 @@ export class WeaponState {
   }
 }
 
+/** Unique drops: the heavy rarities — only ONE of these may lie in the world
+ * at any moment, so a green sun never appears twice in one run. */
+export const UNIQUE_DROPS = new Set(['flame', 'bfg']);
+
+/** May `id` drop given the weapon ids already lying on the ground? */
+export function dropAllowed(id: string, existingPickupIds: string[]): boolean {
+  if (!UNIQUE_DROPS.has(id)) return true;
+  return !existingPickupIds.some((e) => UNIQUE_DROPS.has(e));
+}
+
 /** Decide what a killed zombie drops. Returns weapon id or null. */
 export function rollDrop(threatLevel: number, rng: RNG): string | null {
   const chance = 0.12 + 0.02 * (threatLevel - 1);
