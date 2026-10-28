@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { AABB, Vec2, SpatialHash, resolveCircleWorld, segmentBlocked } from './collision';
-import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT, THREAT, FLAME } from './config';
+import { ZOMBIE, PERF, THROWABLE, PACK, FATALITY, FAT, THREAT, FLAME, CHARGER, PLAYER } from './config';
 import { ThrowableObject } from './world';
 import { attacksFromBehind } from './pack';
 
@@ -12,6 +12,7 @@ export type ZombieState =
   | 'idle' | 'search' | 'approach' | 'flank' | 'intercept'
   | 'grab' | 'windupThrow' | 'recoverThrow'
   | 'windupAttack' | 'strike' | 'recover'
+  | 'windupCharge' | 'charging'
   | 'stagger' | 'dead';
 
 export type Role = 'pursuer' | 'flanker' | 'thrower' | 'interceptor' | 'swarm';
@@ -66,6 +67,8 @@ export interface Zombie {
   assault: boolean;
   /** Boomer class: gut-bloated, slow, detonates on player contact. */
   fat: boolean;
+  /** Charger class: huge, black, telegraphed charge with brutal knockback. */
+  charger: boolean;
   /** Collision radius — fat zombies are wider (raycast + world push). */
   radius: number;
   /** Non-null while this zombie rides a vehicle (scooter hooligan). */
@@ -102,6 +105,11 @@ export interface Zombie {
 
 export interface ZombieEvents {
   onPlayerDamage(amount: number, x: number, z: number): void;
+  /** A charger bowled the player over: launch them away from (x, z) with the
+   * given horizontal power and vertical lift (airborne = no speed clamp). */
+  onChargerHit(x: number, z: number, power: number, lift: number): void;
+  /** A charger began its windup bellow — the audible dodge warning. */
+  onChargeWindup(z: Zombie): void;
   onThrow(pos: THREE.Vector3, vel: THREE.Vector3, obj: ThrowableObject): void;
   onKill(z: Zombie): void;
   onHurtSound(z: Zombie): void;
@@ -130,6 +138,8 @@ const FLASH = new THREE.MeshStandardMaterial({ color: 0xffdddd, emissive: 0x6611
 const BURNING = new THREE.MeshStandardMaterial({ color: 0xff6a1a, emissive: 0xcc3300, roughness: 0.9 });
 // the fat ones wear what's left of an elasticated waistband
 const FAT_SUIT = new THREE.MeshStandardMaterial({ color: 0x4e5a2a, roughness: 0.95 });
+// the charger: soot-black, faintly oily
+const CHARGER_SUIT = new THREE.MeshStandardMaterial({ color: CHARGER.color, roughness: 0.6 });
 
 let nextId = 1;
 
@@ -203,7 +213,7 @@ export class ZombieManager {
     this.active = [];
   }
 
-  spawn(x: number, z: number, packId: number, threat: number, fat = false): Zombie {
+  spawn(x: number, z: number, packId: number, threat: number, fat = false, charger = false): Zombie {
     let zom = this.pool.pop();
     if (!zom) {
       const parts = buildMesh();
@@ -212,7 +222,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, charger: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -227,12 +237,18 @@ export class ZombieManager {
     zom.speed = ZOMBIE.baseSpeed + ZOMBIE.speedPerThreat * (Math.min(threat, THREAT.endlessSpeedCapThreat) - 1) + (Math.random() - 0.5) * ZOMBIE.speedVariance;
     // boomer scaling: a tanky, slow, wide bastard in a strained green suit
     zom.fat = fat;
-    zom.radius = fat ? ZOMBIE.radius * FAT.radiusMult : ZOMBIE.radius;
+    zom.charger = charger;
+    zom.radius = fat ? ZOMBIE.radius * FAT.radiusMult
+      : charger ? ZOMBIE.radius * CHARGER.radiusMult
+      : ZOMBIE.radius;
     if (fat) {
       zom.hp *= FAT.hpMult;
       zom.speed *= FAT.speedMult;
+    } else if (charger) {
+      zom.hp *= CHARGER.hpMult;
+      zom.speed *= CHARGER.speedMult;
     }
-    const suit = fat ? FAT_SUIT : CLOTHES[zom.id % CLOTHES.length];
+    const suit = fat ? FAT_SUIT : charger ? CHARGER_SUIT : CLOTHES[zom.id % CLOTHES.length];
     zom.bodyMat = suit;
     zom.bodyMesh.material = suit;
     zom.legL.material = suit;
@@ -271,7 +287,11 @@ export class ZombieManager {
     zom.lodLevel = 0;
     zom.mesh.position.set(x, 0, z);
     zom.mesh.rotation.set(0, 0, 0);
-    zom.mesh.scale.set(fat ? 1.5 : 1, fat ? 1.22 : 1, fat ? 1.5 : 1); // bloated, or reset for pool reuse
+    zom.mesh.scale.set(
+      fat ? 1.5 : charger ? CHARGER.meshScale[0] : 1,
+      fat ? 1.22 : charger ? CHARGER.meshScale[1] : 1,
+      fat ? 1.5 : charger ? CHARGER.meshScale[2] : 1,
+    ); // bloated / huge-black / reset for pool reuse
     this.scene.add(zom.mesh);
     this.active.push(zom);
     return zom;
@@ -452,7 +472,7 @@ export class ZombieManager {
         z.hitFlash -= dt;
         if (z.hitFlash <= 0) {
           z.hitFlash = 0;
-          z.bodyMat = z.fat ? FAT_SUIT : CLOTHES[z.id % CLOTHES.length];
+          z.bodyMat = z.fat ? FAT_SUIT : z.charger ? CHARGER_SUIT : CLOTHES[z.id % CLOTHES.length];
           z.bodyMesh.material = z.bodyMat;
         }
       }
@@ -470,7 +490,7 @@ export class ZombieManager {
         }
       } else if (z.burnT <= 0 && z.bodyMesh.material === BURNING) {
         z.burnT = 0;
-        z.bodyMat = z.fat ? FAT_SUIT : CLOTHES[z.id % CLOTHES.length];
+        z.bodyMat = z.fat ? FAT_SUIT : z.charger ? CHARGER_SUIT : CLOTHES[z.id % CLOTHES.length];
         z.bodyMesh.material = z.bodyMat;
       }
 
@@ -563,8 +583,14 @@ export class ZombieManager {
         if (z.stateT <= 0) {
           z.state = 'strike';
           z.stateT = 0.12;
-          if (dist < ZOMBIE.meleeRange + 0.35 && z.los) {
-            this.events.onPlayerDamage(ZOMBIE.meleeDamage, z.pos.x, z.pos.z);
+          const reach = ZOMBIE.meleeRange * (z.charger ? CHARGER.reachMult : 1) + 0.35;
+          if (dist < reach && z.los) {
+            if (z.charger) {
+              // a charger's swat half-launches you: it never just taps you
+              this.events.onChargerHit(z.pos.x, z.pos.z, CHARGER.knockPower * 0.6, CHARGER.knockLift * 0.6);
+            } else {
+              this.events.onPlayerDamage(ZOMBIE.meleeDamage, z.pos.x, z.pos.z);
+            }
           }
         }
         this.integrate(z, adt, 0);
@@ -585,6 +611,47 @@ export class ZombieManager {
         this.face(z, toPlayerX, toPlayerZ, adt, 3);
         if (z.stateT <= 0) z.state = 'approach';
         this.integrate(z, adt, 0.2);
+        return;
+      }
+      case 'windupCharge': {
+        // coil up and lock a heading — the bellow + crouch is the dodge window
+        z.stateT -= adt;
+        this.face(z, toPlayerX, toPlayerZ, adt, 5);
+        if (z.stateT <= 0) {
+          z.state = 'charging';
+          z.stateT = CHARGER.dashTime;
+          const d = Math.hypot(toPlayerX, toPlayerZ) || 1;
+          z.vel.x = (toPlayerX / d) * CHARGER.dashSpeed;
+          z.vel.z = (toPlayerZ / d) * CHARGER.dashSpeed;
+        }
+        this.integrate(z, adt, 0);
+        return;
+      }
+      case 'charging': {
+        // committed straight line: full speed, no steering, no decay
+        z.stateT -= adt;
+        z.pos.x += z.vel.x * adt;
+        z.pos.z += z.vel.z * adt;
+        resolveCircleWorld(this.colliders, z.pos, z.radius);
+        z.mesh.position.set(z.pos.x, z.mesh.position.y, z.pos.z);
+        z.mesh.rotation.y = z.facing;
+        if (dist < z.radius + PLAYER.radius + 0.3 && z.los) {
+          // it got you: damage + a launch into orbit (one atomic hit)
+          this.events.onChargerHit(z.pos.x, z.pos.z, CHARGER.knockPower, CHARGER.knockLift);
+          z.state = 'recover';
+          z.stateT = 0.7;
+          z.attackCd = CHARGER.cooldown;
+          z.vel.x = 0;
+          z.vel.z = 0;
+          return;
+        }
+        if (z.stateT <= 0) {
+          z.state = 'recover';
+          z.stateT = 0.5;
+          z.attackCd = CHARGER.cooldown;
+          z.vel.x *= 0.2;
+          z.vel.z *= 0.2;
+        }
         return;
       }
       case 'grab': {
@@ -665,11 +732,20 @@ export class ZombieManager {
 
     // --- active states: idle / search / approach / flank / intercept / grab-pick ---
 
+    // charger: a mid-range target in sight starts the show — bellow, coil,
+    // then a committed straight-line dash (beat it and the cooldown is yours)
+    if (z.charger && z.attackCd <= 0 && z.los && dist < CHARGER.range && dist > CHARGER.minRange) {
+      z.state = 'windupCharge';
+      z.stateT = CHARGER.windup;
+      this.events.onChargeWindup(z);
+      return;
+    }
+
     // decide whether to attack — flankers and interceptors that actually
     // made it behind the player's back hit with extra reach: the observable
     // payoff of the pack's maneuver (turn around or eat the grab)
     const flank = (z.role === 'flanker' || z.role === 'interceptor') && attacksFromBehind(z, player);
-    const reach = ZOMBIE.meleeRange + (flank ? PACK.flankBonusRange : 0);
+    const reach = ZOMBIE.meleeRange * (z.charger ? CHARGER.reachMult : 1) + (flank ? PACK.flankBonusRange : 0);
     const canAttack = z.attackCd <= 0 && dist < reach && z.los;
     if (!z.fat && canAttack && (z.role === 'swarm' || z.role === 'pursuer' || z.role === 'interceptor' || flank || dist < 2.2)) {
       z.state = 'windupAttack';

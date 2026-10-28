@@ -11,7 +11,8 @@ import { Zombie, PlayerView, Role, ZombieManager, ZombieEvents } from '../src/zo
 import { GasClouds } from '../src/gas';
 import { World } from '../src/world';
 import { makePath, samplePath, distPointSeg } from '../src/traffic';
-import { THREAT, PACK, FAT, ZOMBIE, FLAME, WEAPONS, CHAINSAW_START_FUEL } from '../src/config';
+import { THREAT, PACK, FAT, ZOMBIE, FLAME, WEAPONS, CHAINSAW_START_FUEL, CHARGER } from '../src/config';
+import { Player } from '../src/player';
 
 // --- RNG ---------------------------------------------------------------------
 describe('RNG', () => {
@@ -356,6 +357,8 @@ describe('pack knowledge', () => {
 // --- Fat boomers (the big ones) --------------------------------------------------------
 const silentEvents = (log: string[]): ZombieEvents => ({
   onPlayerDamage: () => {},
+  onChargerHit: () => {},
+  onChargeWindup: () => {},
   onThrow: () => {},
   onKill: () => { log.push('kill'); },
   onHurtSound: () => {},
@@ -421,6 +424,7 @@ describe('fat boomers', () => {
     const vels: THREE.Vector3[] = [];
     const zm = new ZombieManager(new THREE.Scene(), [], {
       onPlayerDamage: () => {}, onKill: () => {}, onHurtSound: () => {},
+      onChargerHit: () => {}, onChargeWindup: () => {},
       onFatExplosion: () => {}, onThrow: (_p, v) => { vels.push(v.clone()); },
     });
     const player: PlayerView = {
@@ -453,6 +457,7 @@ describe('fat boomers', () => {
       fakeZombie(13, -5), fakeZombie(14, 6), fakeZombie(-12, -4),
     ];
     members[0].fat = true;
+    members[1].charger = true;
     const pack = mkPack(members);
     const player: PlayerView = { ...fakePlayer, vel: new THREE.Vector3(8, 0, 0) };
     for (let k = 0; k < 10; k++) {
@@ -460,7 +465,100 @@ describe('fat boomers', () => {
       expect(roles[0]).not.toBe('flanker');
       expect(roles[0]).not.toBe('interceptor');
       expect(roles[0]).not.toBe('thrower');
+      expect(roles[1]).not.toBe('flanker'); // chargers are blunt too
+      expect(roles[1]).not.toBe('interceptor');
+      expect(roles[1]).not.toBe('thrower');
     }
+  });
+});
+
+// --- Charger (the big black bastard) ---------------------------------------------------
+describe('charger', () => {
+  const chargerEvents = (hits: { power: number; lift: number }[], windups: { n: number }) => ({
+    onPlayerDamage: () => {}, onKill: () => {}, onHurtSound: () => {},
+    onFatExplosion: () => {}, onThrow: () => {},
+    onChargeWindup: () => { windups.n++; },
+    onChargerHit: (_x: number, _z: number, power: number, lift: number) => { hits.push({ power, lift }); },
+  });
+
+  it('spawns huge, black, tanky and slower than the crowd', () => {
+    const zm = new ZombieManager(new THREE.Scene(), [], silentEvents([]));
+    const normal = zm.spawn(0, 0, 1, 3);
+    const c = zm.spawn(30, 0, 1, 3, false, true);
+    expect(c.charger).toBe(true);
+    expect(c.fat).toBe(false);
+    expect(c.radius).toBeCloseTo(ZOMBIE.radius * CHARGER.radiusMult);
+    expect(c.mesh.scale.x).toBeGreaterThan(1.5); // significantly larger (fat is 1.5)
+    expect(c.bodyMat.color.getHex()).toBe(CHARGER.color); // unmistakably black
+    expect(c.hp / normal.hp).toBeGreaterThan(CHARGER.hpMult * 0.7); // variance-safe ratio
+    expect(c.speed).toBeLessThan(normal.speed);
+    zm.clearAll();
+  });
+
+  it('telegraphs, dashes in a straight line and launches the player on contact', () => {
+    const hits: { power: number; lift: number }[] = [];
+    const windups = { n: 0 };
+    const zm = new ZombieManager(new THREE.Scene(), [], chargerEvents(hits, windups));
+    const player: PlayerView = {
+      pos: { x: 0, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    const c = zm.spawn(8, 0, 1, 3, false, true);
+    // first update: LOS resolves and the bellow starts the show
+    zm.update(1 / 60, player, 3, []);
+    expect(c.state).toBe('windupCharge');
+    expect(windups.n).toBe(1);
+    // the coil holds still — the readable dodge window
+    const x0 = c.pos.x;
+    for (let k = 0; k < 30; k++) zm.update(1 / 60, player, 3, []);
+    expect(c.state).toBe('windupCharge');
+    expect(Math.abs(c.pos.x - x0)).toBeLessThan(0.05);
+    // commit: straight line along -x (z-velocity stays locked at ~0)
+    for (let k = 0; k < 20; k++) zm.update(1 / 60, player, 3, []);
+    expect(c.state).toBe('charging');
+    for (let k = 0; k < 60; k++) {
+      zm.update(1 / 60, player, 3, []);
+      expect(Math.abs(c.vel.z)).toBeLessThan(0.01);
+      if (hits.length) break;
+    }
+    expect(hits.length).toBe(1);
+    expect(hits[0].power).toBe(CHARGER.knockPower);
+    expect(hits[0].lift).toBe(CHARGER.knockLift);
+    expect(c.state).toBe('recover');
+    expect(c.attackCd).toBeCloseTo(CHARGER.cooldown);
+    zm.clearAll();
+  });
+
+  it('a sidestep mid-dash is a real dodge: it thunders past, no hit', () => {
+    const hits: { power: number; lift: number }[] = [];
+    const windups = { n: 0 };
+    const zm = new ZombieManager(new THREE.Scene(), [], chargerEvents(hits, windups));
+    const player: PlayerView = {
+      pos: { x: 0, z: 0 }, vel: new THREE.Vector3(), yaw: 0, sprinting: false, eyeY: 1.7,
+    };
+    const c = zm.spawn(8, 0, 1, 3, false, true);
+    let guard = 0;
+    while (c.state !== 'charging' && guard++ < 600) zm.update(1 / 60, player, 3, []);
+    expect(c.state).toBe('charging');
+    player.pos.z = 5; // hop off the locked dash line
+    for (let k = 0; k < 90; k++) zm.update(1 / 60, player, 3, []);
+    expect(hits.length).toBe(0);
+    expect(c.pos.x).toBeLessThan(0); // it charged right past the origin
+    zm.clearAll();
+  });
+
+  it('knock launches the player airborne — far past the ground speed clamp', () => {
+    const p = new Player(new THREE.PerspectiveCamera(), []);
+    p.reset();
+    const x0 = p.pos.x;
+    p.knock(1, 0, CHARGER.knockPower, CHARGER.knockLift);
+    expect(p.onGround).toBe(false);
+    let maxDist = 0;
+    for (let k = 0; k < 120; k++) {
+      p.update(1 / 60);
+      maxDist = Math.max(maxDist, p.pos.x - x0);
+    }
+    // ~16 m of flight: the airborne frames dodge the walk/sprint clamp
+    expect(maxDist).toBeGreaterThan(8);
   });
 });
 

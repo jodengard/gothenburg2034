@@ -1,7 +1,7 @@
 /** Application startup, main loop, and system wiring. */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY, FAT, FLAME, BFG } from './config';
+import { PLAYER, WEAPONS, WORLD, SCOOTER, FATALITY, BUNNY, FAT, FLAME, BFG, CHARGER } from './config';
 import { state, resetState, saveHighScore } from './state';
 import { buildWorld, World, ThrowableObject } from './world';
 import { buildLandmarks } from './landmarks';
@@ -261,6 +261,19 @@ const zombies = new ZombieManager(scene, world.colliders, {
   },
   onHurtSound() {
     sfx.zombieHurt();
+  },
+  onChargeWindup() {
+    // the bellow is the warning: coil, then commit. Dodge it.
+    sfx.growl();
+  },
+  onChargerHit(x, z, power, lift) {
+    // one atomic hit: damage + a launch away from the charger (airborne = free)
+    if (player.damage(CHARGER.hitDamage, x, z)) {
+      sfx.playerHurt();
+      sfx.thud();
+      fx.addShake(0.8);
+      player.knock(player.pos.x - x, player.pos.z - z, power, lift);
+    }
   },
   onFatExplosion(x, z) {
     // the gut lets go: blast + filth + a lingering shit-cloud
@@ -1165,6 +1178,7 @@ function step(dt: number): void {
     if (spawnGrace > 0) return; // arrival calm: the first packs simply don't show
     const members: Zombie[] = [];
     let fats = 0;
+    let chargers = 0;
     for (let i = 0; i < size; i++) {
       const ox = x + (Math.random() - 0.5) * 4;
       const oz = z + (Math.random() - 0.5) * 4;
@@ -1172,7 +1186,12 @@ function step(dt: number): void {
       const fat = state.threatLevel >= 3 && fats < FAT.maxPerPack &&
         Math.random() < FAT.chance[Math.min(state.threatLevel, FAT.chance.length) - 1];
       if (fat) fats++;
-      members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel, fat));
+      // chargers: from threat 2, one per pack, never stacked on a boomer
+      const charger = !fat && chargers < CHARGER.maxPerPack &&
+        state.threatLevel >= CHARGER.fromThreat &&
+        Math.random() < CHARGER.chance[Math.min(state.threatLevel, CHARGER.chance.length) - 1];
+      if (charger) chargers++;
+      members.push(zombies.spawn(ox, oz, director.packCounter, state.threatLevel, fat, charger));
     }
     packs.createPack(members);
   }, state.threatLevel);

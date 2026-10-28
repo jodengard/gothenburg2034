@@ -186,6 +186,31 @@ export const FAT = {
   },
 };
 
+// Charger: a wall of black muscle. Crouches with a bellow (readable telegraph),
+// then humps a straight line at you. If it connects it launches you into orbit
+// — airborne means the speed clamp is off, so you genuinely fly. Commit to the
+// dodge: the dash is committed, but so is the cooldown if you beat it.
+export const CHARGER = {
+  chance: [0, 0.08, 0.12, 0.16, 0.2] as const, // per threat level (1..5)
+  fromThreat: 2, // chargers join the party from threat 2 on
+  maxPerPack: 1, // one per pack is plenty
+  hpMult: 3.5,
+  speedMult: 0.85, // shambles slower than the crowd...
+  radiusMult: 1.9, // ...but takes a whole lane...
+  meshScale: [1.9, 2.0, 1.9] as const, // ...and is unmistakably huge and black
+  color: 0x141414,
+  range: 10, // starts eyeing you within this distance (m)
+  minRange: 3, // point-blank it swings instead of dashing
+  windup: 0.7, // crouch-telegaph: audible bellow, visible coil (s)
+  dashSpeed: 13, // m/s during the charge (~2x sprint — time the sidestep)
+  dashTime: 0.9, // seconds of commitment: 11.7 m of road, so beat it early
+  hitDamage: 16,
+  knockPower: 22, // horizontal launch speed (m/s) — insane by design
+  knockLift: 6.5, // vertical launch (m/s) — airborne = no speed clamp
+  cooldown: 3.2, // seconds between charges
+  reachMult: 1.5, // its melee reach scales with its size
+};
+
 export interface WeaponDef {
   id: string;
   name: string;

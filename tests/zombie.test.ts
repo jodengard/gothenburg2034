@@ -9,6 +9,8 @@ function makeManager() {
   const scene = new THREE.Scene();
   const events = {
     onPlayerDamage: () => undefined,
+    onChargerHit: () => undefined,
+    onChargeWindup: () => undefined,
     onThrow: () => undefined,
     onKill: () => undefined,
     onHurtSound: () => undefined,

@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 54 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 58 unit tests (pure logic + headless zombie sim + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,29 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Weapons — Flamethrower & BFG-9000 — verified
+## Current milestone: Enemy — the Charger (charger branch) — verified
+
+- **The Charger**: a wall of **soot-black muscle** (`CHARGER` in `config.ts`) — mesh
+  scaled **1.9×/2.0×** (boomer is 1.5×, normal 1×), collision radius 1.9×, 3.5× hp,
+  black oily suit (`CHARGER_SUIT`, 0x141414 — survives hit-flash and burn restore).
+  Spawns from **threat 2**, max **1 per pack**, never stacked on a boomer; blunt like
+  the boomers in `computeRoles` (no flanker/thrower/interceptor games).
+- **The charge**: sees you within 10 m → **bellow + coil** (`sfx.growl`, 0.7 s
+  windup — the readable dodge window) → **committed straight-line dash** 13 m/s
+  (≈2× sprint) for 0.9 s — no steering, no bullet-decay, locked heading. Beat it and
+  it thunders past into a 0.5 s recover + 3.2 s cooldown. Point-blank (<3 m) it
+  swats instead of dashing.
+- **Insane knockback**: contact = 16 dmg + `onChargerHit` → `player.knock()` adds
+  22 m/s horizontal + 6.5 m/s vertical and yanks you off the ground — **airborne
+  frames bypass the ground speed clamp**, so you genuinely fly (~16 m live). The
+  swat half-launches (0.6×). Immunity blocks damage *and* launch (one atomic event).
+- **Verified live**: FSM `approach → windupCharge@0.32s → charging@1.02s →
+  recover@1.55s`; player launched at 22 m/s, vy 6.5, **flew 15.6 m**; 16 dmg;
+  2 min at threat 4 → 54 packs, 10 chargers, max 1/pack; sidestep mid-dash = clean
+  miss. 58/58 unit tests (4 new: spawn stats + black suit, telegraph→dash→launch FSM
+  with locked z-velocity, sidestep dodge, `Player.knock` airborne flight > 8 m).
+
+## Previous milestone: Weapons — Flamethrower & BFG-9000 — verified
 
 - **Flamethrower** (`flame`): auto weapon, ammo = fuel (100-unit tank, 20/s burn rate,
   one extra tank per pickup, 2.6 s reload). The stream is a 11 m / 14° half-angle cone

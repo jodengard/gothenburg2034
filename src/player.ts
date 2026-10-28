@@ -91,6 +91,16 @@ export class Player {
     return true;
   }
 
+  /** Charger launch: add velocity away from the hit and yank off the ground.
+   * Airborne means the ground speed clamp doesn't run, so you genuinely fly. */
+  knock(dirX: number, dirZ: number, power: number, lift: number): void {
+    const d = Math.hypot(dirX, dirZ) || 1;
+    this.vel.x += (dirX / d) * power;
+    this.vel.z += (dirZ / d) * power;
+    this.vel.y = Math.max(this.vel.y, lift);
+    this.onGround = false;
+  }
+
   update(dt: number): void {
     this.immunity = Math.max(0, this.immunity - dt);
     this.damageFlash = Math.max(0, this.damageFlash - dt * 2.2);

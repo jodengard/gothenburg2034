@@ -70,8 +70,9 @@ export function computeRoles(pack: Pack, ctx: PackContext): Role[] {
   if (n === 0) return [];
 
   const dists = members.map((m) => distTo(m, player));
-  // fat boomers are blunt instruments: they only ever shamble at you
-  const fat = members.map((m) => !!m.fat);
+  // fat boomers and chargers are blunt instruments: they only ever shamble
+  // (or thunder) straight at you — no flanking, no throwing
+  const blunt = members.map((m) => !!m.fat || !!m.charger);
   const minDist = Math.min(...dists);
   const playerSpeed = Math.hypot(player.vel.x, player.vel.z);
   const playerDist = minDist; // pack is near player if closest member is
@@ -89,7 +90,7 @@ export function computeRoles(pack: Pack, ctx: PackContext): Role[] {
   if (threat >= THREAT.throwersEnabledFromLevel && throwablesAvailable && playerDist < PACK.throwRange * 1.6) {
     for (let k = order.length - 1; k >= 0; k--) {
       const i = order[k];
-      if (!fat[i] && roles[i] !== 'swarm') {
+      if (!blunt[i] && roles[i] !== 'swarm') {
         roles[i] = 'thrower';
         break;
       }
@@ -100,7 +101,7 @@ export function computeRoles(pack: Pack, ctx: PackContext): Role[] {
   if (playerSpeed > 3.2) {
     for (let k = order.length - 1; k >= 0; k--) {
       const i = order[k];
-      if (!fat[i] && roles[i] === 'pursuer') {
+      if (!blunt[i] && roles[i] === 'pursuer') {
         roles[i] = 'interceptor';
         break;
       }
@@ -112,7 +113,7 @@ export function computeRoles(pack: Pack, ctx: PackContext): Role[] {
   let placed = 0;
   for (let k = order.length - 1; k >= 0 && placed < flankerCount; k--) {
     const i = order[k];
-    if (!fat[i] && roles[i] === 'pursuer') {
+    if (!blunt[i] && roles[i] === 'pursuer') {
       roles[i] = 'flanker';
       placed++;
     }
