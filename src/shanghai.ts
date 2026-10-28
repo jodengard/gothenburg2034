@@ -114,6 +114,10 @@ const M = {
   lanternGold: new THREE.MeshBasicMaterial({ color: 0xffc94d }),
   poleRed: new THREE.MeshLambertMaterial({ color: 0x7d2320 }),
   wood: new THREE.MeshLambertMaterial({ color: 0x6a4a2a }),
+  bikeYellow: new THREE.MeshLambertMaterial({ color: 0xf2b705 }),
+  bikeDark: new THREE.MeshLambertMaterial({ color: 0x22262b }),
+  stone: new THREE.MeshLambertMaterial({ color: 0x8a8f96 }),
+  bin: new THREE.MeshLambertMaterial({ color: 0x2f4a3a }),
 };
 const NEON = [0xff3d81, 0x31e0ff, 0x7dff4a, 0xffb13d, 0xc94dff].map(
   (c) => new THREE.MeshBasicMaterial({ color: c }),
@@ -326,7 +330,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   };
   const keepOut: [number, number, number][] = [
     [X(30), 52 * S, 7], // parked shuttle — you board it, keep the deck clear
-    [X(26), 16 * S, 4.5], // noodle stall
+    [X(47.4), -14.2 * S, 4.5], // noodle stall (relocated east of the Axis: clear of the shrub rows)
     [X(52), 34 * S, 4], // player start
   ];
   const clearOf = (x: number, z: number, m: number): boolean =>
@@ -432,7 +436,9 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   const SHRUB = [0x4a7040, 0xc4587a, 0x8a5fb0, 0xc0392b, 0xd07aa0];
   const shrubM: { m: THREE.Matrix4; c: number }[] = [];
   const pushShrub = (x: number, z: number): void => {
-    if (blocked(x, z, 0.4)) return;
+    // clearOf also guards the plaza props whose colliders land AFTER this
+    // section (the noodle stall was getting buried by the shrub rows)
+    if (blocked(x, z, 0.4) || !clearOf(x, z, 0.8)) return;
     const s = 0.7 + rng() * 0.5;
     shrubM.push({
       m: new THREE.Matrix4().makeScale(s, s * (0.7 + rng() * 0.4), s).setPosition(x, 0.42 * s, z),
@@ -571,7 +577,7 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
 
   // A single 茶 lantern-board by the noodle stall — every old street has one.
   const tea = signMesh('茶', 0.85, 1.7, true, '#7a1f1f', '#ffe9b0');
-  tea.position.set(X(23.6), 2.5, 16 * S);
+  tea.position.set(X(53), 2.5, -14.2 * S); // hangs over the stall's new counter
   tea.rotation.y = Math.PI / 2 + 0.4;
   add(tea);
 
@@ -600,11 +606,125 @@ export function buildShanghaiWorld(scene: THREE.Scene): World {
   bus.rotation.y = 2.4;
   scene.add(bus);
 
-  // --- noodle stall west of the Expo Axis: 牛肉麵 and a resident bunny ----------------
-  const stallX = X(26), stallZ = 16 * S;
+  // --- noodle stall on the Axis plaza: 牛肉麵 and a resident bunny ------------------
+  // relocated east-south of the middle cone, clear of the shrub rows that clipped it
+  const stallX = X(47.4), stallZ = -14.2 * S;
   const noodle = buildNoodleStall(stallX, stallZ, Math.PI / 2); // real size: you eat at it
   scene.add(noodle.group);
   colliders.push(...noodle.colliders);
+
+  // --- street life: bus stop, shared bikes, chess tables, litter bins -------------
+  const bikePts: { x: number; z: number; ry: number }[] = [];
+  const pushBike = (x: number, z: number, ry: number): void => {
+    if (blocked(x, z, 0.7) || !clearOf(x, z, 0.8)) return;
+    for (const b of bikePts) if (Math.hypot(b.x - x, b.z - z) < 1.15) return;
+    bikePts.push({ x, z, ry });
+    colliders.push(ry === 0 ? makeAABB(x, z, 0.7, 1.9, 1) : makeAABB(x, z, 1.9, 0.7, 1));
+  };
+
+  // A bus stop on 周家渡路 — the 610/786 really stop here, so people wait here.
+  if (zjdLine.length > 1) {
+    const stops = walkPolyline(zjdLine, 22);
+    const st = stops[Math.min(1, stops.length - 1)];
+    if (st) {
+      const ry = Math.atan2(st.dx, st.dz);
+      const fx = Math.sin(ry), fz = Math.cos(ry); // along the road
+      const px = Math.cos(ry), pz = -Math.sin(ry); // across the road (shelter's local x)
+      for (const side of [1, -1]) {
+        const nx = -st.dz * side, nz = st.dx * side; // shelter sits off the carriageway
+        const sx = st.x + nx * 6.2, sz = st.z + nz * 6.2;
+        if (blocked(sx, sz, 1.2) || !clearOf(sx, sz, 1.2)) continue;
+        add(box(3.2, 0.14, 1.7, M.white, sx, 2.5, sz, ry)); // roof
+        add(box(3.2, 1.7, 0.1, M.glassCone, sx + nx * 0.78, 1.55, sz + nz * 0.78, ry)); // back
+        for (const s of [1, -1]) {
+          add(box(0.1, 1.5, 1.7, M.glassCone, sx + px * s * 1.55, 1.5, sz + pz * s * 1.55, ry));
+          add(box(0.09, 2.5, 0.09, M.pole, sx + px * s * 1.55 + fx * 0.75, 1.25, sz + pz * s * 1.55 + fz * 0.75));
+          add(box(0.09, 2.5, 0.09, M.pole, sx + px * s * 1.55 - fx * 0.75, 1.25, sz + pz * s * 1.55 - fz * 0.75));
+        }
+        add(box(2.6, 0.09, 0.5, M.wood, sx + nx * 0.4, 0.46, sz + nz * 0.4, ry)); // waiting bench
+        const plate = signMesh('周家渡路', 1.9, 0.5, false, '#1d5c48', '#f2f5f2');
+        plate.position.set(sx - nx * 1.15, 2.95, sz - nz * 1.15);
+        plate.rotation.y = Math.atan2(-nx, -nz); // faces the carriageway
+        add(plate);
+        // shared bikes parked at the kerb — how half of Shanghai does the last mile
+        // (placed BEFORE the panel collider: its axis-aligned box on a skewed
+        // road would swallow every parking spot in front of the shelter)
+        for (let d = -2.4; d <= 2.4; d += 1.7) pushBike(sx - nx * 1.1 + px * d, sz - nz * 1.1 + pz * d, 0);
+        colliders.push(makeAABB(sx + nx * 0.78, sz + nz * 0.78, 3.3, 0.5, 3));
+        break;
+      }
+    }
+  }
+
+  // The shared-bike fleet: yellow rows along both sides of the Axis (instanced,
+  // 3 draws). The east side dodges the tower fronts; the west side has the room.
+  for (let t = -22; t <= 12; t += 4.6) {
+    pushBike(C.x + AXIS.x * t + perp.x * 6.3, C.z + AXIS.z * t + perp.z * 6.3, 0);
+  }
+  for (const t of [-8, -2, 17, 23]) {
+    pushBike(C.x + AXIS.x * t - perp.x * 6.3, C.z + AXIS.z * t - perp.z * 6.3, 0);
+  }
+  if (bikePts.length) {
+    const frames = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.14, 1.05), M.bikeYellow, bikePts.length);
+    const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.06, 0.06), M.bikeDark, bikePts.length);
+    const wheelG = new THREE.CylinderGeometry(0.33, 0.33, 0.07, 10);
+    wheelG.rotateZ(Math.PI / 2); // axle across the bike
+    const wheels = new THREE.InstancedMesh(wheelG, M.bikeDark, bikePts.length * 2);
+    bikePts.forEach((b, i) => {
+      mtx.makeRotationY(b.ry).setPosition(b.x, 0.52, b.z);
+      frames.setMatrixAt(i, mtx);
+      mtx.makeRotationY(b.ry).setPosition(b.x + Math.sin(b.ry) * 0.46, 0.9, b.z + Math.cos(b.ry) * 0.46);
+      bars.setMatrixAt(i, mtx);
+      for (let w = 0; w < 2; w++) {
+        const off = (w ? 1 : -1) * 0.5;
+        mtx.makeRotationY(b.ry).setPosition(b.x + Math.sin(b.ry) * off, 0.33, b.z + Math.cos(b.ry) * off);
+        wheels.setMatrixAt(i * 2 + w, mtx);
+      }
+    });
+    frames.castShadow = true;
+    add(frames); add(bars); add(wheels);
+  }
+
+  // Stone chess tables under the plaza trees — retiree territory, always a crowd.
+  // Inset to perp -3.2 so they clear the west bike row (perp -6.3) and the stall.
+  const tablePts: { x: number; z: number }[] = [];
+  for (const t of [-5.2, 18]) {
+    const x = C.x + AXIS.x * t - perp.x * 3.2, z = C.z + AXIS.z * t - perp.z * 3.2;
+    if (!blocked(x, z, 1.4) && clearOf(x, z, 1.5)) tablePts.push({ x, z });
+  }
+  if (tablePts.length) {
+    const tables = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.55, 0.5, 0.72, 10), M.stone, tablePts.length);
+    const stools = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.42, 8), M.wood, tablePts.length * 4);
+    tablePts.forEach((p, i) => {
+      tables.setMatrixAt(i, new THREE.Matrix4().setPosition(p.x, 0.36, p.z));
+      colliders.push(makeAABB(p.x, p.z, 1.15, 1.15, 1));
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + 0.5;
+        stools.setMatrixAt(i * 4 + k, new THREE.Matrix4().setPosition(p.x + Math.sin(a) * 1.05, 0.21, p.z + Math.cos(a) * 1.05));
+      }
+    });
+    tables.castShadow = true;
+    add(tables); add(stools);
+  }
+
+  // Litter bins beside every bench and the stall — otherwise the plaza is filthy.
+  const binPts: { x: number; z: number }[] = [];
+  for (const t of [-17, 0, 17]) {
+    const x = C.x + AXIS.x * (t + 1.7) + perp.x * 5.4, z = C.z + AXIS.z * (t + 1.7) + perp.z * 5.4;
+    if (!blocked(x, z, 0.5) && clearOf(x, z, 0.6)) binPts.push({ x, z });
+  }
+  {
+    const x = stallX + 2, z = stallZ - 2.6;
+    if (!blocked(x, z, 0.5)) binPts.push({ x, z });
+  }
+  if (binPts.length) {
+    const bins = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28, 0.24, 0.85, 8), M.bin, binPts.length);
+    binPts.forEach((p, i) => {
+      bins.setMatrixAt(i, new THREE.Matrix4().setPosition(p.x, 0.43, p.z));
+      colliders.push(makeAABB(p.x, p.z, 0.55, 0.55, 1));
+    });
+    add(bins);
+  }
 
   // --- routes: the real 周家渡路 arterial through the arena ----------------------
   const IN = H - 8;
