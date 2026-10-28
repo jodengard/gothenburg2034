@@ -245,10 +245,13 @@ const zombies = new ZombieManager(scene, world.colliders, {
       // Fatality: the body bursts apart — the corpse hides, gore chunks fly.
       z.mesh.visible = false;
       fx.gore(z.pos.x, 1.15, z.pos.z);
+      // a headshot takes the head clean off — it rockets down the bullet line
+      if (z.lastHitHead) fx.severedHead(z.pos.x, 1.7, z.pos.z, z.lastHitDirX, z.lastHitDirZ);
       sfx.gore();
     } else {
       sfx.zombieDie();
       fx.blood(z.pos.x, 1.1, z.pos.z);
+      fx.bloodPool(z.pos.x, z.pos.z, 0.5); // the corpse bleeds into the ground
     }
     const drop = rollDrop(state.threatLevel, rng);
     // unique rule: only one flamethrower/BFG lies in the world at a time
@@ -678,6 +681,7 @@ function fireWeapon(): void {
     for (const z of hits) {
       const killed = zombies.damage(z, def.damage, dir.x * 5, dir.z * 5, { byPlayer: true });
       fx.blood(z.pos.x, 1.2, z.pos.z, dir.x, dir.z);
+      fx.mist(z.pos.x, 1.2, z.pos.z, dir.x, dir.z);
       hud.hitMarker();
       sfx.hitFlesh();
       if (killed) fx.addShake(0.12);
@@ -695,6 +699,7 @@ function fireWeapon(): void {
       zombies.damage(z, def.damage * (def.chainTick ?? 0.12), dir.x * 2, dir.z * 2, { byPlayer: true });
       fx.sawSpray(z.pos.x, 1.15, z.pos.z, dir.x, dir.z); // heavy gore every tick
       if (Math.random() < 0.05) fx.gore(z.pos.x, 1.1, z.pos.z); // now and then it chews up chunks
+      if (Math.random() < 0.04) fx.bloodPool(z.pos.x, z.pos.z, 0.55); // the floor turns to sludge
       hud.hitMarker();
     }
     return;
@@ -772,6 +777,7 @@ function fireWeapon(): void {
       zombies.damage(hit.z, dmg, d.x * 3, d.z * 3, { headshot: hit.head, byPlayer: true });
       const hy = hit.head ? 1.7 : Math.min(1.6, eye.y);
       fx.blood(hit.z.pos.x, hy, hit.z.pos.z, d.x, d.z);
+      fx.mist(hit.z.pos.x, hy, hit.z.pos.z, d.x, d.z); // arterial hang
       hud.hitMarker(hit.head);
       if (hit.head) sfx.headshot(); else sfx.hitConfirm();
     } else if (worldDist < def.range) {

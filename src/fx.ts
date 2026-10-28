@@ -1,6 +1,6 @@
 /** Particle effects: blood, sparks, explosion flash, fatality gore chunks. Pooled, bounded. */
 import * as THREE from 'three';
-import { PERF, FATALITY } from './config';
+import { PERF, FATALITY, GORE } from './config';
 
 interface Particle {
   alive: boolean;
@@ -24,8 +24,32 @@ interface Chunk {
   maxLife: number;
 }
 
+/** Persistent ground blood pool: spreads on landing, dries red→black, then fades. */
+interface Pool {
+  alive: boolean;
+  x: number; z: number;
+  r: number; // final radius
+  rot: number; // yaw, so the shared blob outline reads varied
+  spread: number; // 0..1 grow-in progress
+  life: number;
+  maxLife: number;
+}
+
+/** Severed head: a big round gib that bounces, rolls and settles. */
+interface Head {
+  alive: boolean;
+  x: number; y: number; z: number;
+  vx: number; vy: number; vz: number;
+  rx: number; rz: number;
+  wx: number; wz: number; // roll spin
+  life: number;
+  maxLife: number;
+}
+
 const CHUNK_COLORS = [0x8a1518, 0x5e0f12, 0x6f7a3a, 0x9a8f6a]; // blood, dark blood, flesh, bone
 const MAX_CHUNKS = 90;
+const MAX_POOLS = GORE.poolMax;
+const MAX_HEADS = 24;
 
 export class Fx {
   private points: THREE.Points;
@@ -36,12 +60,17 @@ export class Fx {
   private flashLight: THREE.PointLight;
   private chunks: THREE.InstancedMesh;
   private chunkPool: Chunk[] = [];
+  private pools: THREE.InstancedMesh;
+  private bloodPools: Pool[] = [];
+  private heads: THREE.InstancedMesh;
+  private headPool: Head[] = [];
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private e = new THREE.Euler();
   private v3 = new THREE.Vector3();
   private s3 = new THREE.Vector3();
   private c3 = new THREE.Color();
+  private c3Dark = new THREE.Color(0x1c0203); // dried-blood target for pools
 
   constructor(scene: THREE.Scene) {
     const n = PERF.maxParticles;
@@ -79,6 +108,49 @@ export class Fx {
     this.chunks.instanceMatrix.needsUpdate = true;
     if (this.chunks.instanceColor) this.chunks.instanceColor.needsUpdate = true;
     scene.add(this.chunks);
+
+    // blood pools: flat translucent blobs that spread, dry and fade (1 draw call).
+    // the outline is one jagged blob — per-instance yaw + oval squash varies the look.
+    const blob: THREE.Vector2[] = [];
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const rr = 0.7 + Math.random() * 0.5; // lumpy edge, like real splatter
+      blob.push(new THREE.Vector2(Math.cos(a) * rr, Math.sin(a) * rr));
+    }
+    const poolGeo = new THREE.ShapeGeometry(new THREE.Shape(blob));
+    poolGeo.rotateX(-Math.PI / 2);
+    const poolMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
+    this.pools = new THREE.InstancedMesh(poolGeo, poolMat, MAX_POOLS);
+    this.pools.frustumCulled = false;
+    this.pools.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let i = 0; i < MAX_POOLS; i++) {
+      this.bloodPools.push({ alive: false, x: 0, z: 0, r: 0, rot: 0, spread: 0, life: 0, maxLife: 1 });
+      this.m4.makeScale(0, 0, 0);
+      this.m4.setPosition(0, -10, 0);
+      this.pools.setMatrixAt(i, this.m4);
+    }
+    this.pools.instanceMatrix.needsUpdate = true;
+    this.pools.renderOrder = 2; // draw over the ground, under particles
+    scene.add(this.pools);
+
+    // severed heads: one InstancedMesh (1 draw call), skin-toned
+    const headGeo = new THREE.IcosahedronGeometry(0.16, 1);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x7d9a5a, roughness: 0.9, metalness: 0 });
+    this.heads = new THREE.InstancedMesh(headGeo, headMat, MAX_HEADS);
+    this.heads.frustumCulled = false;
+    this.heads.castShadow = false;
+    this.heads.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let i = 0; i < MAX_HEADS; i++) {
+      this.headPool.push({ alive: false, x: 0, y: -10, z: 0, vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, wx: 0, wz: 0, life: 0, maxLife: 1 });
+      this.m4.makeScale(0, 0, 0);
+      this.m4.setPosition(0, -10, 0);
+      this.heads.setMatrixAt(i, this.m4);
+    }
+    this.heads.instanceMatrix.needsUpdate = true;
+    scene.add(this.heads);
   }
 
   private emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, color: THREE.Color, grav = 9.5): void {
@@ -223,11 +295,11 @@ export class Fx {
     );
   }
 
-  /** Fatality: burst the corpse into flying gore chunks + a blood cloud. */
+  /** Fatality: burst the corpse into flying gore chunks + a blood cloud + pools. */
   gore(x: number, y: number, z: number): void {
     // blood cloud
     const bc = new THREE.Color(0x8a1518);
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 34; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 2 + Math.random() * 6;
       this.emit(x, y, z, Math.cos(a) * sp, 2 + Math.random() * 5, Math.sin(a) * sp,
@@ -251,9 +323,78 @@ export class Fx {
       placed++;
     }
     if (this.chunks.instanceColor) this.chunks.instanceColor.needsUpdate = true;
+    // the mess that stays: a central pool ringed by satellite splatters
+    this.splat(x, z, GORE.fatalityPools);
     this.flashLight.position.set(x, y, z);
     this.flashLight.intensity = Math.max(this.flashLight.intensity, 4);
     this.shake = Math.min(1, this.shake + 0.5);
+  }
+
+  /** One blood pool; the oldest recycles when the field is full. */
+  bloodPool(x: number, z: number, r = 0.45): void {
+    let slot = -1;
+    let oldest = Infinity;
+    for (let i = 0; i < this.bloodPools.length; i++) {
+      const p = this.bloodPools[i];
+      if (!p.alive) { slot = i; break; }
+      if (p.life < oldest) { oldest = p.life; slot = i; }
+    }
+    const p = this.bloodPools[slot];
+    p.alive = true;
+    p.x = x + (Math.random() - 0.5) * 0.3;
+    p.z = z + (Math.random() - 0.5) * 0.3;
+    p.r = r * (0.8 + Math.random() * 0.5);
+    p.rot = Math.random() * Math.PI * 2;
+    p.spread = 0;
+    p.life = p.maxLife = GORE.poolLife * (0.8 + Math.random() * 0.4);
+  }
+
+  /** Fatality splatter: a big central pool plus satellites flung outward. */
+  splat(x: number, z: number, satellites = GORE.fatalityPools): void {
+    this.bloodPool(x, z, 0.85);
+    for (let k = 0; k < satellites; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 0.7 + Math.random() * 1.9;
+      this.bloodPool(x + Math.cos(a) * d, z + Math.sin(a) * d, 0.28 + Math.random() * 0.3);
+    }
+  }
+
+  /** Arterial mist: slow dark-red motes that hang at the wound for a moment. */
+  mist(x: number, y: number, z: number, dirX = 0, dirZ = 0): void {
+    const dark = new THREE.Color(0x7a1014);
+    const bright = new THREE.Color(0xb0252e);
+    for (let i = 0; i < 6; i++) {
+      this.emit(
+        x, y + (Math.random() - 0.5) * 0.3, z,
+        dirX * 1.3 + (Math.random() - 0.5) * 1.7,
+        0.3 + Math.random() * 1.1,
+        dirZ * 1.3 + (Math.random() - 0.5) * 1.7,
+        0.5 + Math.random() * 0.4, Math.random() < 0.4 ? bright : dark,
+        -0.6, // nearly buoyant: the mist lingers
+      );
+    }
+  }
+
+  /** Headshot: the head comes off, rockets down the bullet line, rolls, settles. */
+  severedHead(x: number, y: number, z: number, dirX = 0, dirZ = 0): void {
+    let slot = -1;
+    let oldest = Infinity;
+    for (let i = 0; i < this.headPool.length; i++) {
+      const h = this.headPool[i];
+      if (!h.alive) { slot = i; break; }
+      if (h.life < oldest) { oldest = h.life; slot = i; }
+    }
+    const h = this.headPool[slot];
+    h.alive = true;
+    h.x = x; h.y = y; h.z = z;
+    const spd = 5 + Math.random() * 3;
+    h.vx = dirX * spd + (Math.random() - 0.5) * 1.5;
+    h.vz = dirZ * spd + (Math.random() - 0.5) * 1.5;
+    h.vy = 3.5 + Math.random() * 2.5;
+    h.rx = Math.random() * 6; h.rz = Math.random() * 6;
+    h.wx = (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 8);
+    h.wz = (Math.random() - 0.5) * 10;
+    h.life = h.maxLife = GORE.headLife;
   }
 
   update(dt: number): void {
@@ -326,5 +467,77 @@ export class Fx {
       this.chunks.setMatrixAt(i, this.m4);
     }
     if (chunkDirty) this.chunks.instanceMatrix.needsUpdate = true;
+
+    // blood pools: grow in fast, dry red→black over life, shrink out at the end
+    let poolDirty = false;
+    for (let i = 0; i < this.bloodPools.length; i++) {
+      const p = this.bloodPools[i];
+      if (!p.alive) continue;
+      poolDirty = true;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.alive = false;
+        this.m4.makeScale(0, 0, 0);
+        this.m4.setPosition(0, -10, 0);
+        this.pools.setMatrixAt(i, this.m4);
+        continue;
+      }
+      if (p.spread < 1) p.spread = Math.min(1, p.spread + dt * 3.2);
+      const age = 1 - p.life / p.maxLife; // 0 fresh → 1 dried
+      const ease = 1 - Math.pow(1 - p.spread, 3); // fast spread, easing out
+      const shrink = p.life < 1.5 ? p.life / 1.5 : 1;
+      const r = p.r * ease * shrink;
+      this.e.set(0, p.rot, 0);
+      this.q.setFromEuler(this.e);
+      this.v3.set(p.x, 0.02, p.z);
+      this.s3.set(r, 1, r * (0.82 + 0.3 * ((i * 0.618) % 1))); // slightly oval
+      this.m4.compose(this.v3, this.q, this.s3);
+      this.pools.setMatrixAt(i, this.m4);
+      // fresh arterial red → dried near-black
+      this.c3.setHex(0x6e0d12).lerp(this.c3Dark, Math.min(1, age * 1.4));
+      this.pools.setColorAt(i, this.c3);
+    }
+    if (poolDirty) {
+      this.pools.instanceMatrix.needsUpdate = true;
+      if (this.pools.instanceColor) this.pools.instanceColor.needsUpdate = true;
+    }
+
+    // severed heads: fly, bounce, roll, soak in
+    let headDirty = false;
+    for (let i = 0; i < this.headPool.length; i++) {
+      const h = this.headPool[i];
+      if (!h.alive) continue;
+      headDirty = true;
+      h.life -= dt;
+      if (h.life <= 0) {
+        h.alive = false;
+        this.m4.makeScale(0, 0, 0);
+        this.m4.setPosition(0, -10, 0);
+        this.heads.setMatrixAt(i, this.m4);
+        continue;
+      }
+      h.vy -= 14 * dt;
+      h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
+      if (h.y < 0.15) {
+        h.y = 0.15;
+        if (Math.abs(h.vy) > 1) {
+          h.vy = Math.abs(h.vy) * 0.42; // round skull bounces good
+          if (Math.random() < 0.5) this.blood(h.x, 0.25, h.z); // drip on the bounce
+        } else {
+          h.vy = 0;
+          h.vx *= 0.94; h.vz *= 0.94; // rolling friction
+          h.wx *= 0.96; h.wz *= 0.96;
+        }
+      }
+      h.rx += h.wx * dt; h.rz += h.wz * dt;
+      const shrink = h.life < 0.6 ? h.life / 0.6 : 1;
+      this.e.set(h.rx, 0, h.rz);
+      this.q.setFromEuler(this.e);
+      this.v3.set(h.x, h.y, h.z);
+      this.s3.setScalar(0.95 * shrink);
+      this.m4.compose(this.v3, this.q, this.s3);
+      this.heads.setMatrixAt(i, this.m4);
+    }
+    if (headDirty) this.heads.instanceMatrix.needsUpdate = true;
   }
 }

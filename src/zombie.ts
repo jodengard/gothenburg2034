@@ -84,6 +84,9 @@ export interface Zombie {
   /** Damage attribution for the killing blow (fatalities only on player kills). */
   lastHitHead: boolean;
   lastHitByPlayer: boolean;
+  /** normalized direction the last headshot travelled (for the severed-head gib) */
+  lastHitDirX: number;
+  lastHitDirZ: number;
   /** Set by kill() when this death plays as an exploding fatality. */
   exploded: boolean;
   /** Flamethrower: seconds of burn left; the corpse chars while they tick. */
@@ -225,7 +228,7 @@ export class ZombieManager {
         hp: 0, speed: 0, state: 'idle', role: 'pursuer', packId: 0,
         lastKnown: { x, z }, los: false, losTimer: 0, stateT: 0, attackCd: 0,
         staggerT: 0, stuckT: 0, stuckRef: { x, z }, unstickT: 0, unstickSide: 1,
-        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, charger: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, mowCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
+        targetObj: null, carrying: null, order: null, orderFresh: false, assault: false, fat: false, charger: false, radius: ZOMBIE.radius, ride: null, trafficCd: 0, mowCd: 0, wasRiding: false, lastHitHead: false, lastHitByPlayer: false, lastHitDirX: 0, lastHitDirZ: 0, exploded: false, burnT: 0, burnTick: 0, animT: 0, fallDir: 0, deadT: 0,
         aiAccum: 0, hitFlash: 0, lodLevel: 0, ...parts,
       };
     }
@@ -303,6 +306,8 @@ export class ZombieManager {
     zom.wasRiding = false;
     zom.lastHitHead = false;
     zom.lastHitByPlayer = false;
+    zom.lastHitDirX = 0;
+    zom.lastHitDirZ = 0;
     zom.exploded = false;
     zom.burnT = 0;
     zom.burnTick = 0;
@@ -349,7 +354,11 @@ export class ZombieManager {
     z.vel.x += knockX;
     z.vel.z += knockZ;
     if (opts) {
-      if (opts.headshot) z.lastHitHead = true;
+      if (opts.headshot) {
+        z.lastHitHead = true;
+        const kl = Math.hypot(knockX, knockZ); // knockback rides the bullet's line
+        if (kl > 0.01) { z.lastHitDirX = knockX / kl; z.lastHitDirZ = knockZ / kl; }
+      }
       if (opts.byPlayer) z.lastHitByPlayer = true;
     }
     if (z.hp <= 0) {

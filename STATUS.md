@@ -12,7 +12,7 @@ procedural, all audio WebAudio-generated.
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # type-check + production bundle in dist/
-npm test         # 61 unit tests (pure logic + headless zombie sim + traffic path math)
+npm test         # 65 unit tests (pure logic + headless zombie sim + gore invariants + traffic path math)
 node tools/fetch-map.mjs          # re-pull OSM data (centered 57.69725, 11.98775, r=420 m)
 node tools/fetch-map-shanghai.mjs # re-pull the Shanghai Expo OSM data
 ```
@@ -21,7 +21,32 @@ Click **START**, then play. Esc pauses (releases pointer lock), Enter/button res
 Board the **Flygbussen** (the navy airport coach among the blue buses) to teleport to the
 small **Shanghai Expo** arena — a parked return coach sends you back to Göteborg.
 
-## Current milestone: Shanghai 2.6 — stall clipping fix + street life — verified
+## Current milestone: `grafix` branch — gore experiment — verified
+
+- **Experiment branch** (not merged to `main`): push the kill feedback from
+  "pops and fades" to "the ground remembers". All new effects are pooled,
+  instanced and bounded — no per-kill allocations, one extra draw call per
+  system.
+- **Blood pools** (`Fx.bloodPool`/`splat`): persistent ground decals — one
+  shared jagged `ShapeGeometry` blob (irregular splatter outline), instanced
+  with per-pool yaw + oval squash so repeats don't read as copies. Pools
+  spread-ease in, **dry from arterial red to near-black** over ~28 s, shrink
+  out, and the oldest of the 48 slots recycles when full. Every corpse leaves
+  one; every fatality leaves a central pool ringed by 5 satellite splatters;
+  sustained chainsaw work turns the floor to sludge.
+- **Severed heads** (`Fx.severedHead`): headshot kills launch a skin-toned
+  skull gib down the bullet line (direction stored on the zombie at damage
+  time from the knockback vector) — it flies, bounces off the ground with a
+  blood drip, rolls with friction and soaks in after 7 s.
+- **Arterial mist** (`Fx.mist`): 6 nearly-buoyant dark-red motes that hang at
+  the wound on every bullet/melee hit; particle budget 600 → 800.
+- **Fatter fatalities**: blood cloud 26 → 34 particles, chunks 10 → 16.
+- New `GORE` config block (`poolMax/poolLife/fatalityPools/headLife`);
+  4 new invariant tests in `tests/gore.test.ts` (pool cap + recycle, spread +
+  dry + expire, head flight/settle/travel, bounded chunks under 30
+  detonations). 65/65 unit tests.
+
+## Previous milestone: Shanghai 2.6 — stall clipping fix + street life — verified
 
 - **Boomer height normalised** (user tuning): the boomer mesh was scaled
   `(1.5, 1.22, 1.5)` — wider *and* taller than a normal zombie, which pushed its

@@ -65,7 +65,15 @@ export const FATALITY = {
   headMinY: 1.48, // head hitbox in zombie-local space (mesh y + this)
   headMaxY: 1.95,
   chance: 0.15, // chance a player kill detonates the corpse (headshot kills always do)
-  chunks: 10, // gore chunks per detonation
+  chunks: 16, // gore chunks per detonation
+};
+
+/** Grafix branch: persistent gore — blood pools that dry, rolling heads, arterial mist. */
+export const GORE = {
+  poolMax: 48, // persistent ground pools (instanced; the oldest gets recycled)
+  poolLife: 28, // seconds a pool hangs around, drying from red to near-black
+  fatalityPools: 5, // satellite splatters ringing a detonation
+  headLife: 7, // seconds a severed head rolls around before it soaks in
 };
 
 export const ZOMBIE = {
@@ -344,5 +352,5 @@ export const PERF = {
   farAiDist: 45, // beyond this, AI updates at reduced rate
   farAiInterval: 0.25,
   maxProjectiles: 64,
-  maxParticles: 600,
+  maxParticles: 800,
 };
